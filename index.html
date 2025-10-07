@@ -690,10 +690,10 @@ Akey
                 partIndex++;
             }
             
-            // Name with grade - format "FirstName LastName, Grade"
+            // Name with grade - format "FirstName LastName, Grade" or "FirstName LastName, Grade*" (asterisk for females)
             if (partIndex < parts.length) {
                 const namePart = parts[partIndex];
-                const nameMatch = namePart.match(/^(.+),\s*(\d{1,2})$/);
+                const nameMatch = namePart.match(/^(.+),\s*(\d{1,2})\*?$/);
                 if (nameMatch) {
                     result.name = nameMatch[1].trim();
                     result.grade = nameMatch[2];
