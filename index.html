@@ -1059,7 +1059,7 @@ Akey
             const gradeMatch = remaining.match(/\s+(\d{1,2}T?)\s*$/);
             let grade = '';
             if (gradeMatch) {
-                grade = gradeMatch[1];
+                grade = gradeMatch[1].replace(/T$/i, ''); // Remove trailing T
                 remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
             }
 
