@@ -1093,8 +1093,8 @@ Akey
 
             if (bibIndex >= parts.length) return null;
             const bib = parts[bibIndex];
-            // Bib can be 2-4 digits (35, 594, etc.)
-            if (!bib.match(/^\d{2,4}$/)) return null;
+            // Bib can be 1-4 digits (1, 35, 594, etc.)
+            if (!bib.match(/^\d{1,4}$/)) return null;
 
             // Everything between bib and grade is Name + Team
             const nameTeamParts = parts.slice(bibIndex + 1);
