@@ -496,6 +496,8 @@ Akey
                 // Skip header content - find where results actually start
                 // First, look for "Individuals" section or the all-results header (RunHigh format)
                 let individualsIndex = -1;
+                let teamResultsEnd = -1;
+
                 for (let i = 0; i < lines.length; i++) {
                     if (lines[i].match(/^Individuals$/i) ||
                         lines[i].match(/ID#\s+POINTS/i) ||
@@ -503,6 +505,20 @@ Akey
                         lines[i].match(/^Top$/i)) {
                         individualsIndex = i;
                         break;
+                    }
+
+                    // RCC Timing: Skip "Team Overall Results" section
+                    if (lines[i].match(/Team Overall Results|Team Results/i)) {
+                        // Find where team results end (look for first individual result line)
+                        for (let j = i + 1; j < lines.length; j++) {
+                            // Individual results have: Overall, Score, Bib, Name, Class, Time, Team
+                            if (lines[j].match(/^\d+\s+\d+\s+\d{2,5}\s+\w+.*\s+(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                                teamResultsEnd = j;
+                                individualsIndex = j;
+                                break;
+                            }
+                        }
+                        if (teamResultsEnd >= 0) break;
                     }
                 }
 
@@ -551,6 +567,11 @@ Akey
                         startIndex = i;
                         break;
                     }
+                    // RCC Timing individual results: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
+                    if (line.match(/^1\s+\d+\s+\d{2,5}\s+\w+.*\s+(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // KarmaRush/other formats: line starting with place number
                     if (line.match(/^1(\t|$)/)) {
                         startIndex = i;
@@ -582,8 +603,8 @@ Akey
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
                     // RCC Timing format: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
                     // Pattern: Overall, Score, Bib, Name, Class (SR/JR/SO/FR), Time, Team
-                    // Look for Class marker and time format
-                    if (resultLines[i].match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i) && resultLines[i].match(/^1\s+/)) {
+                    // Look for Class marker and time format (with optional 00: prefix)
+                    if (resultLines[i].match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
                         hasRCCPattern = true;
                         break;
                     }
