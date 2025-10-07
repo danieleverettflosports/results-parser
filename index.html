@@ -811,11 +811,11 @@ Akey
                 if (!paceMatch) continue;
 
                 let remaining = trimmed.substring(0, trimmed.length - paceMatch[0].length);
-                const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d{2})\s*$/);
+                const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d{1,2})\s*$/);
                 if (!timeMatch) continue;
 
                 remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
-                const gradeMatch = remaining.match(/\s+(\d{1,2})\s*$/);
+                const gradeMatch = remaining.match(/\s+(\d{1,2}T?)\s*$/);
                 if (!gradeMatch) continue;
 
                 remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
@@ -860,19 +860,19 @@ Akey
             const trimmed = line.trim();
 
             // Extract from right to left (more reliable):
-            // Pace at end: "6:04/M"
+            // Pace at end: "6:04/M" or "5:27/M"
             const paceMatch = trimmed.match(/\s+(\d{1,2}:\d{2}\/M)\s*$/);
             if (!paceMatch) return null;
             let remaining = trimmed.substring(0, trimmed.length - paceMatch[0].length);
 
-            // Time before pace: "12:08.84"
-            const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d{2})\s*$/);
+            // Time before pace: "12:08.84" or "16:55.0" (1 or 2 decimal places)
+            const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d{1,2})\s*$/);
             if (!timeMatch) return null;
             const time = timeMatch[1];
             remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
 
-            // Grade before time: "9" or "10", "11", "12"
-            const gradeMatch = remaining.match(/\s+(\d{1,2})\s*$/);
+            // Grade before time: "9", "10", "11", "12", or "9T" (with optional T)
+            const gradeMatch = remaining.match(/\s+(\d{1,2}T?)\s*$/);
             if (!gradeMatch) return null;
             const grade = gradeMatch[1];
             remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
