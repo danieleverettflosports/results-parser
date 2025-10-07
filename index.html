@@ -846,27 +846,29 @@ Akey
             const nameTeamParts = parts.slice(bibIndex + 1);
             if (nameTeamParts.length < 2) return null;
 
-            // Heuristic: First 2-3 words are name, rest is team
-            const name = nameTeamParts.slice(0, 3).join(' ');
-            const team = nameTeamParts.slice(3).join(' ');
+            // Heuristic: Names are typically 2-3 words (First Last or First Middle Last)
+            // Teams can have multiple words and may start with abbreviations like "CC"
+            // Strategy: Try to find where the team starts by looking for capital initials or known patterns
 
-            if (!team || team.length === 0) {
-                // Try 2 words for name
-                const name2 = nameTeamParts.slice(0, 2).join(' ');
-                const team2 = nameTeamParts.slice(2).join(' ');
-                if (team2 && team2.length > 0) {
-                    return {
-                        place: place,
-                        bib: bib,
-                        name: name2,
-                        team: team2,
-                        time: time,
-                        grade: grade,
-                        points: '',
-                        pace: ''
-                    };
+            let nameEndIndex = 2; // Default: assume 2 words for name (First Last)
+
+            // If there are 4+ words total, check if word 3 or 4 looks like a team prefix
+            if (nameTeamParts.length >= 4) {
+                // Check if 3rd word is a short abbreviation (like "CC", "HS", etc.)
+                if (nameTeamParts[2].length <= 3 && nameTeamParts[2].match(/^[A-Z]+$/)) {
+                    nameEndIndex = 2; // Keep 2 words for name
+                } else if (nameTeamParts.length >= 5 && nameTeamParts[3].length <= 3 && nameTeamParts[3].match(/^[A-Z]+$/)) {
+                    nameEndIndex = 3; // 3 words for name (First Middle Last)
+                } else {
+                    // No obvious team prefix, assume 3 words for name if available
+                    nameEndIndex = Math.min(3, nameTeamParts.length - 1);
                 }
             }
+
+            const name = nameTeamParts.slice(0, nameEndIndex).join(' ');
+            const team = nameTeamParts.slice(nameEndIndex).join(' ');
+
+            if (!team || team.length === 0) return null;
 
             return {
                 place: place,
