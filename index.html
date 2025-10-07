@@ -512,6 +512,11 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
+                    // Athlete Guild: "Name    Bib    Team    Rank    Time..."
+                    if (line.match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{2,4}(\t|\s{2,})[A-Z]/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Endurance Splits: "1    1    1164    Name..."
                     if (line.match(/^1(\t|\s{2,})1(\t|\s{2,})\d{3,4}(\t|\s{2,})[A-Z]/i)) {
                         startIndex = i;
