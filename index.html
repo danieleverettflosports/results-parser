@@ -715,12 +715,16 @@ Akey
             // Skip O'All Place
             partIndex++;
 
-            // Score (skip if contains < or > or parentheses)
+            // Score (if contains < or > or parentheses, set to empty)
             const score = parts[partIndex];
+            let place = '';
             if (score.includes('<') || score.includes('>') || score.includes('(')) {
-                return null;
+                place = ''; // Keep the runner but no score
+            } else if (score.match(/^\d+$/)) {
+                place = score;
+            } else {
+                return null; // Invalid score format
             }
-            if (!score.match(/^\d+$/)) return null;
             partIndex++;
 
             // Bib number
@@ -743,7 +747,7 @@ Akey
             if (!time || !time.match(/\d+:\d+/)) return null;
 
             return {
-                place: score,
+                place: place,
                 bib: bib,
                 name: name,
                 team: team,
