@@ -530,7 +530,7 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
-                    // Baumspage format: "1    211    Teagan Kennedy        Maumee    1    36    1    00:18:03.10    5:49"
+                    // RaceDay Scoring format: "1    211    Teagan Kennedy        Maumee    1    36    1    00:18:03.10    5:49"
                     if (line.match(/^1\s+\d{2,5}\s+\w+.*\s+\d{2}:\d{2}:\d{2}\.\d{2}\s+\d{1,2}:\d{2}/)) {
                         startIndex = i;
                         break;
@@ -626,13 +626,13 @@ Akey
                 let hasRCCPattern = false;
                 let hasOklahomaPattern = false;
                 let hasWebscorerPattern = false;
-                let hasBaumspagePattern = false;
+                let hasRaceDayPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
-                    // Baumspage format: "1    211    Teagan Kennedy        Maumee    1    36    1    00:18:03.10    5:49"
+                    // RaceDay Scoring format: "1    211    Teagan Kennedy        Maumee    1    36    1    00:18:03.10    5:49"
                     // Pattern: Place, Bib, Name, Year, Team, Score, TeamScore, TeamPlace, Time, Pace
                     if (resultLines[i].match(/^1\s+\d{2,5}\s+\w+.*\s+\d{2}:\d{2}:\d{2}\.\d{2}\s+\d{1,2}:\d{2}/)) {
-                        hasBaumspagePattern = true;
+                        hasRaceDayPattern = true;
                         break;
                     }
                     // Webscorer format: 3 lines per runner
@@ -725,10 +725,10 @@ Akey
                     }
                 }
                 
-                if (hasBaumspagePattern) {
-                    // Process Baumspage format
+                if (hasRaceDayPattern) {
+                    // Process RaceDay Scoring format
                     for (let i = 0; i < resultLines.length; i++) {
-                        let result = parseBaumspageFormat(resultLines[i]);
+                        let result = parseRaceDayFormat(resultLines[i]);
                         if (result) {
                             extractedResults.push(result);
                         }
@@ -1312,7 +1312,7 @@ Akey
             };
         }
 
-        function parseBaumspageFormat(line) {
+        function parseRaceDayFormat(line) {
             // Format: Place, Bib, Name, Year, Team Name, Score, Team Score, Team Place, Clock Time, Pace
             // Example: "1    211    Teagan Kennedy        Maumee    1    36    1    00:18:03.10    5:49"
             // Score can be: number, (number), or "> 7"
