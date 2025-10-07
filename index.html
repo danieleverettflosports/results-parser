@@ -1135,12 +1135,15 @@ Akey
             if (lowerText.includes('milesplit') || text.includes('Logo') || text.match(/#\d+/)) return 'MileSplit';
             if (lowerText.includes('runsignup')) return 'RunSignup';
             if (lowerText.includes('runhigh') || text.match(/ID#\s+POINTS\s+FINISHER/)) return 'RunHigh';
-            
+
+            // Check for Endurance Splits format before other patterns
+            if (text.match(/^\d+(\t|\s{2,})\d+(\t|\s{2,})\d{3,4}(\t|\s{2,})[A-Z]/m)) return 'Endurance Splits';
+
             if (text.match(/^\s+\d{3,4}\s+\d+\s+\d+\s+[A-Z][a-z]+.*,\s*\d{1,2}\s+\d{1,2}:\d{2}\.\d+/m)) return 'RunHigh';
             if (text.match(/\[\d{1,2}\] - \d{3,4}/)) return 'KarmaRush';
             if (text.match(/^\d{1,3}\s{2,}\d{2,4}\s{2,}/m)) return 'PDF';
             if (text.match(/\t.*\t.*\d{1,2}:\d{2}\.\d/)) return 'RunSignup';
-            
+
             return 'Auto-detected';
         }
 
