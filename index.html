@@ -529,6 +529,11 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
+                    // Oklahoma format: "1 99 Tatum Penland 10 Bixby High School 1 00:19:15 6:12"
+                    if (line.match(/^1\s+\d{1,5}\s+\w+\s+\w+\s+(9|10|11|12)\s+\w+.*\s+\d+\s+\d{2}:\d{2}/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // RCC Timing: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
                     // Middle school: "1 1 4788 Emmett Glenn 8th 00:10:11.64 Bellmont"
                     if (line.match(/(SR|JR|SO|FR|[678]th?|1[0-2]th?)\s+\d{2}:\d{2}:\d{2}\.\d/i) && line.match(/^1\s+/)) {
@@ -601,8 +606,15 @@ Akey
                 let hasVFPPattern = false;
                 let hasWebTimerPattern = false;
                 let hasRCCPattern = false;
+                let hasOklahomaPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // Oklahoma format: "1 99 Tatum Penland 10 Bixby High School 1 00:19:15 6:12"
+                    // Pattern: Place, Bib, Name, Grade (9-12), Team, Score, Time, Pace
+                    if (resultLines[i].match(/^1\s+\d{1,5}\s+\w+\s+\w+\s+(9|10|11|12)\s+\w+.*\s+\d+\s+\d{2}:\d{2}:\d{2}?\s+\d{1,2}:\d{2}/i)) {
+                        hasOklahomaPattern = true;
+                        break;
+                    }
                     // RCC Timing format: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
                     // Middle school: "1 1 4788 Emmett Glenn 8th 00:10:11.64 Bellmont"
                     // Pattern: Overall, Score, Bib, Name, Class (SR/JR/SO/FR or 6th/7th/8th or 6/7/8 or missing), Time, Team
@@ -672,7 +684,15 @@ Akey
                     }
                 }
                 
-                if (hasRCCPattern) {
+                if (hasOklahomaPattern) {
+                    // Process Oklahoma format
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseOklahomaFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                } else if (hasRCCPattern) {
                     // Process RCC Timing format
                     for (let i = 0; i < resultLines.length; i++) {
                         let result = parseRCCFormat(resultLines[i]);
@@ -1105,6 +1125,72 @@ Akey
                 grade: grade,
                 points: '',
                 pace: ''
+            };
+        }
+
+        function parseOklahomaFormat(line) {
+            // Format: Place, Bib, Name, Grade, Team, Score, Time, Pace
+            // Example: "1 99 Tatum Penland 10 Bixby High School 1 00:19:15 6:12"
+            // Example: "21 119 Maggie Kershen 10 Norman High School (21) 00:21:37 6:58"
+            // Score can be: number or (number) for non-scoring
+
+            const trimmed = line.trim();
+
+            // Parse from right to left
+            // Pace at end: "6:12" or "5:27"
+            const paceMatch = trimmed.match(/\s+(\d{1,2}:\d{2})\s*$/);
+            if (!paceMatch) return null;
+            const pace = paceMatch[1];
+            let remaining = trimmed.substring(0, trimmed.length - paceMatch[0].length);
+
+            // Time before pace: "00:19:15" or "19:15"
+            const timeMatch = remaining.match(/\s+(\d{2}:\d{2}:?\d{0,2})\s*$/);
+            if (!timeMatch) return null;
+            let time = timeMatch[1];
+            remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
+
+            // Remove leading "00:" from time
+            if (time.startsWith('00:')) {
+                time = time.substring(3);
+            }
+
+            // Score before time: number or (number)
+            const scoreMatch = remaining.match(/\s+(\(?\d+\)?)\s*$/);
+            if (!scoreMatch) return null;
+            remaining = remaining.substring(0, remaining.length - scoreMatch[0].length);
+
+            // Now parse from left: Place, Bib, Name (first last), Grade, Team
+            const parts = remaining.trim().split(/\s+/);
+            if (parts.length < 5) return null;
+
+            // Place
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Bib
+            const bib = parts[1];
+            if (!bib.match(/^\d{1,5}$/)) return null;
+
+            // Name (first last) - 2 words
+            const name = parts[2] + ' ' + parts[3];
+
+            // Grade (9, 10, 11, 12)
+            const grade = parts[4];
+            if (!grade.match(/^(9|10|11|12)$/)) return null;
+
+            // Team (everything remaining)
+            const team = parts.slice(5).join(' ');
+            if (!team || team.length === 0) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: grade,
+                points: '',
+                pace: pace
             };
         }
 
