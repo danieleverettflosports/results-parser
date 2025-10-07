@@ -512,6 +512,11 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
+                    // NECC: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
+                    if (line.match(/^1\s+\d+\s+\d{2,5}\s+\w+.*(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Web Timer: "1    889    Name    00:12:45.9..."
                     if (line.match(/^1\s+\d{2,5}\s+\w+.*\d{2}:\d{2}:\d{2}\.\d/i)) {
                         startIndex = i;
@@ -572,8 +577,15 @@ Akey
                 let hasAthleteGuildPattern = false;
                 let hasVFPPattern = false;
                 let hasWebTimerPattern = false;
+                let hasNECCPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // NECC format: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
+                    // Pattern: Overall, Score, Bib, Name, Class (SR/JR/SO/FR), Time, Team
+                    if (resultLines[i].match(/^1\s+\d+\s+\d{2,5}\s+\w+.*(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                        hasNECCPattern = true;
+                        break;
+                    }
                     // Web Timer format: "1    889    Name    00:12:45.9    All Ages    1    Female..."
                     // Pattern: Place, Bib, Name, Time (00:HH:MM.S format)
                     if (resultLines[i].match(/^1\s+\d{2,5}\s+\w+.*\d{2}:\d{2}:\d{2}\.\d/i)) {
@@ -635,7 +647,15 @@ Akey
                     }
                 }
                 
-                if (hasWebTimerPattern) {
+                if (hasNECCPattern) {
+                    // Process NECC format
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseNECCFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                } else if (hasWebTimerPattern) {
                     // Process Web Timer format
                     for (let i = 0; i < resultLines.length; i++) {
                         let result = parseWebTimerFormat(resultLines[i]);
@@ -976,6 +996,65 @@ Akey
                 team: team,
                 time: time,
                 grade: grade,
+                points: '',
+                pace: ''
+            };
+        }
+
+        function parseNECCFormat(line) {
+            // Format: "Overall Score Bib# Name Class Chip Time Team"
+            // Example: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
+            // Score can be: number, 0, or (number) for non-scoring
+
+            const parts = line.trim().split(/\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            if (parts.length < 6) return null;
+
+            // Overall position - first column
+            const overall = parts[0];
+            if (!overall.match(/^\d+$/)) return null;
+
+            // Score - second column (can be number, 0, or (number))
+            // Skip this for our purposes
+            let partIndex = 1;
+            partIndex++; // Skip score
+
+            // Bib# - should be a number
+            const bib = parts[partIndex];
+            if (!bib.match(/^\d{2,5}$/)) return null;
+            partIndex++;
+
+            // Name - next field
+            const name = parts[partIndex];
+            if (!name || name.length === 0) return null;
+            partIndex++;
+
+            // Class - SR, JR, SO, FR (or could be a number in some formats)
+            const classField = parts[partIndex];
+            if (!classField) return null;
+            partIndex++;
+
+            // Chip Time - format: 00:15:21.54
+            let time = parts[partIndex];
+            if (!time || !time.match(/\d{2}:\d{2}:\d{2}\.\d/)) return null;
+
+            // Remove leading "00:" from time
+            if (time.startsWith('00:')) {
+                time = time.substring(3);
+            }
+            partIndex++;
+
+            // Team - last field
+            const team = parts[partIndex];
+            if (!team || team.length === 0) return null;
+
+            return {
+                place: overall,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: classField,
                 points: '',
                 pace: ''
             };
@@ -1498,6 +1577,10 @@ Akey
             if (lowerText.includes('runhigh') || text.match(/ID#\s+POINTS\s+FINISHER/)) return 'RunHigh';
             if (lowerText.includes('athlete guild') || lowerText.includes('athleteguild')) return 'Athlete Guild';
             if (lowerText.includes('vfp') || lowerText.includes('v fit productions')) return 'VFP';
+            if (lowerText.includes('necc')) return 'NECC';
+
+            // Check for NECC format: Overall, Score, Bib, Name, Class (SR/JR/SO/FR), Time, Team
+            if (text.match(/^1\s+\d+\s+\d{2,5}\s+\w+.*(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/m)) return 'NECC';
 
             // Check for Web Timer format: Position, Bib, Name, Time (00:HH:MM.S)
             if (text.match(/^1\s+\d{2,5}\s+\w+.*\d{2}:\d{2}:\d{2}\.\d/m)) return 'Web Timer';
