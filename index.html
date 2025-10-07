@@ -513,7 +513,7 @@ Akey
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
                     // RCC Timing: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
-                    if (line.match(/^1\s+\d+\s+\d{2,5}\s+\w+.*(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                    if (line.match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i) && line.match(/^1\s+/)) {
                         startIndex = i;
                         break;
                     }
@@ -582,7 +582,8 @@ Akey
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
                     // RCC Timing format: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
                     // Pattern: Overall, Score, Bib, Name, Class (SR/JR/SO/FR), Time, Team
-                    if (resultLines[i].match(/^1\s+\d+\s+\d{2,5}\s+\w+.*(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                    // Look for Class marker and time format
+                    if (resultLines[i].match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i) && resultLines[i].match(/^1\s+/)) {
                         hasRCCPattern = true;
                         break;
                     }
@@ -1581,7 +1582,7 @@ Akey
             if (lowerText.includes('rcc timing')) return 'RCC Timing';
 
             // Check for RCC Timing format: Overall, Score, Bib, Name, Class (SR/JR/SO/FR), Time, Team
-            if (text.match(/^1\s+\d+\s+\d{2,5}\s+\w+.*(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/m)) return 'RCC Timing';
+            if (text.match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/m) && text.match(/^1\s+/m)) return 'RCC Timing';
 
             // Check for Web Timer format: Position, Bib, Name, Time (00:HH:MM.S)
             if (text.match(/^1\s+\d{2,5}\s+\w+.*\d{2}:\d{2}:\d{2}\.\d/m)) return 'Web Timer';
