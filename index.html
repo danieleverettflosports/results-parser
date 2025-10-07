@@ -894,10 +894,13 @@ Akey
             remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
 
             // Grade before time: "9", "10", "11", "12", or "9T" (with optional T)
+            // Grade is optional - some entries may not have it
             const gradeMatch = remaining.match(/\s+(\d{1,2}T?)\s*$/);
-            if (!gradeMatch) return null;
-            const grade = gradeMatch[1];
-            remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
+            let grade = '';
+            if (gradeMatch) {
+                grade = gradeMatch[1];
+                remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
+            }
 
             // Now from left: Place, Score, Bib, Name, Team
             // Could be: "1 1 35 Lionel Vargas MARTIN" or "1 (< 5) 594 Jose Luis Flores Laredo"
