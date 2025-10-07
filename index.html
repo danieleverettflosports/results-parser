@@ -512,8 +512,8 @@ Akey
                         // Find where team results end (look for first individual result line)
                         for (let j = i + 1; j < lines.length; j++) {
                             // Individual results have: Overall, Score, Bib, Name, Class, Time, Team
-                            // Class can be SR/JR/SO/FR (high school) or 6/7/8 (middle school) or missing
-                            if (lines[j].match(/^\d+\s+(\d+|\(?\d+\)?)\s+\d{2,5}\s+\w+.*\s+(SR|JR|SO|FR|6|7|8)?\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                            // Class can be SR/JR/SO/FR (high school) or 6th/7th/8th or 6/7/8 (middle school) or missing
+                            if (lines[j].match(/^\d+\s+(\d+|\(?\d+\)?)\s+\d{2,5}\s+\w+.*\s+(SR|JR|SO|FR|[678]th?|1[0-2]th?)?\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
                                 teamResultsEnd = j;
                                 individualsIndex = j;
                                 break;
@@ -530,13 +530,8 @@ Akey
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
                     // RCC Timing: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
-                    // Also middle school: "1 1 4788 Emmett Glenn 8 00:10:11.64 Bellmont"
-                    if (line.match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i) && line.match(/^1\s+/)) {
-                        startIndex = i;
-                        break;
-                    }
-                    // Middle school with grade 6, 7, or 8 (single digit before time)
-                    if (line.match(/\s+[678]\s+\d{2}:\d{2}:\d{2}\.\d/i) && line.match(/^1\s+/)) {
+                    // Middle school: "1 1 4788 Emmett Glenn 8th 00:10:11.64 Bellmont"
+                    if (line.match(/(SR|JR|SO|FR|[678]th?|1[0-2]th?)\s+\d{2}:\d{2}:\d{2}\.\d/i) && line.match(/^1\s+/)) {
                         startIndex = i;
                         break;
                     }
@@ -609,15 +604,10 @@ Akey
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
                     // RCC Timing format: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
-                    // Middle school: "1 1 4788 Emmett Glenn 8 00:10:11.64 Bellmont"
-                    // Pattern: Overall, Score, Bib, Name, Class (SR/JR/SO/FR/6/7/8 or missing), Time, Team
+                    // Middle school: "1 1 4788 Emmett Glenn 8th 00:10:11.64 Bellmont"
+                    // Pattern: Overall, Score, Bib, Name, Class (SR/JR/SO/FR or 6th/7th/8th or 6/7/8 or missing), Time, Team
                     // Look for Class marker and time format (with optional 00: prefix)
-                    if (resultLines[i].match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
-                        hasRCCPattern = true;
-                        break;
-                    }
-                    // Middle school with single digit grade (6, 7, 8)
-                    if (resultLines[i].match(/\s+[678]\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                    if (resultLines[i].match(/(SR|JR|SO|FR|[678]th?|1[0-2]th?)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
                         hasRCCPattern = true;
                         break;
                     }
@@ -1040,7 +1030,7 @@ Akey
             // Format: "Overall Score Bib# Name Class Chip Time Team"
             // Example: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
             // Example: "21 21 365 Nathan Troxel Gonzalez JR 00:18:08.34 West Noble"
-            // Middle School: "1 1 4788 Emmett Glenn 8 00:10:11.64 Bellmont"
+            // Middle School: "1 1 4788 Emmett Glenn 8th 00:10:11.64 Bellmont"
             // Middle School (no class): "21 20 2519 Jacob Chacon 00:11:34.55 New Haven"
             // Score can be: number, 0, or (number) for non-scoring
 
@@ -1048,8 +1038,8 @@ Akey
 
             // Work from right to left
             // First find Class and Time pattern
-            // Class can be: SR, JR, SO, FR (high school) or 6, 7, 8 (middle school) or missing
-            let classTimeMatch = trimmed.match(/\s+(SR|JR|SO|FR|6|7|8)\s+(\d{2}:\d{2}:\d{2}\.\d+)\s+(.+?)\s*$/i);
+            // Class can be: SR, JR, SO, FR (high school) or 6th/7th/8th or 6/7/8 (middle school) or missing
+            let classTimeMatch = trimmed.match(/\s+(SR|JR|SO|FR|[678]th?|1[0-2]th?)\s+(\d{2}:\d{2}:\d{2}\.\d+)\s+(.+?)\s*$/i);
 
             let classField = '';
             let time = '';
@@ -1100,13 +1090,19 @@ Akey
             const name = parts.slice(partIndex).join(' ');
             if (!name || name.length === 0) return null;
 
+            // Remove "th" suffix from grade (8th -> 8, 7th -> 7, etc.)
+            let grade = classField;
+            if (grade && grade.match(/^\d+th$/i)) {
+                grade = grade.replace(/th$/i, '');
+            }
+
             return {
                 place: overall,
                 bib: bib,
                 name: name,
                 team: team,
                 time: time,
-                grade: classField,
+                grade: grade,
                 points: '',
                 pace: ''
             };
