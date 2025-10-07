@@ -554,8 +554,14 @@ Akey
                 
                 let hasSpaceDelimitedPattern = false;
                 let hasEnduranceSplitsPattern = false;
+                let hasAthleteGuildPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // Athlete Guild format: "Name    Bib    Team    Rank    Chip Time    Pace"
+                    if (resultLines[i].match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{2,4}(\t|\s{2,})[A-Z]/i)) {
+                        hasAthleteGuildPattern = true;
+                        break;
+                    }
                     // Endurance Splits format: "1    1    1164    Sofia Lauren Garza    Mission Sharyland    18:18.8    5:54/M"
                     if (resultLines[i].match(/^\d+(\t|\s{2,})\d+(\t|\s{2,})\d{3,4}(\t|\s{2,})[A-Z]/i)) {
                         hasEnduranceSplitsPattern = true;
@@ -598,7 +604,15 @@ Akey
                     }
                 }
                 
-                if (hasEnduranceSplitsPattern) {
+                if (hasAthleteGuildPattern) {
+                    // Process Athlete Guild format
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseAthleteGuildFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                } else if (hasEnduranceSplitsPattern) {
                     // Process Endurance Splits format
                     for (let i = 0; i < resultLines.length; i++) {
                         let result = parseEnduranceSplitsFormat(resultLines[i]);
@@ -744,6 +758,55 @@ Akey
             partIndex++;
 
             // Time
+            const time = parts[partIndex];
+            if (!time || !time.match(/\d+:\d+/)) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: '',
+                pace: ''
+            };
+        }
+
+        function parseAthleteGuildFormat(line) {
+            // Format: "Name    Bib    Team    Rank    Chip Time    Pace"
+            // Example: "Macee Rhodes    292    Utopia    1    14:24.429    11:35"
+
+            // Split by tabs or multiple spaces (2+)
+            const parts = line.trim().split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            if (parts.length < 5) return null;
+
+            // First part should be a name (contains letters and possibly spaces)
+            if (!parts[0].match(/^[A-Z][a-z]+(\s+[A-Z][a-z]+)+$/i)) return null;
+
+            let partIndex = 0;
+
+            // Name
+            const name = parts[partIndex];
+            partIndex++;
+
+            // Bib number
+            const bib = parts[partIndex];
+            if (!bib.match(/^\d{2,4}$/)) return null;
+            partIndex++;
+
+            // Team
+            const team = parts[partIndex];
+            if (!team || team.length === 0) return null;
+            partIndex++;
+
+            // Rank (place)
+            const place = parts[partIndex];
+            if (!place.match(/^\d+$/)) return null;
+            partIndex++;
+
+            // Chip Time
             const time = parts[partIndex];
             if (!time || !time.match(/\d+:\d+/)) return null;
 
@@ -1136,6 +1199,10 @@ Akey
             if (lowerText.includes('milesplit') || text.includes('Logo') || text.match(/#\d+/)) return 'MileSplit';
             if (lowerText.includes('runsignup')) return 'RunSignup';
             if (lowerText.includes('runhigh') || text.match(/ID#\s+POINTS\s+FINISHER/)) return 'RunHigh';
+            if (lowerText.includes('athlete guild') || lowerText.includes('athleteguild')) return 'Athlete Guild';
+
+            // Check for Athlete Guild format: Name    Bib    Team    Rank    Time
+            if (text.match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{2,4}(\t|\s{2,})[A-Z]/m)) return 'Athlete Guild';
 
             // Check for Endurance Splits format before other patterns
             if (text.match(/^\d+(\t|\s{2,})\d+(\t|\s{2,})\d{3,4}(\t|\s{2,})[A-Z]/m)) return 'Endurance Splits';

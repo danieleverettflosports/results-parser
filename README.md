@@ -6,6 +6,8 @@ Transform messy race results into beautiful, organized data. Supports multiple p
 - **KarmaRush**
 - **RunSignup**
 - **MileSplit**
+- **Athlete Guild**
+- **Endurance Splits**
 
 ## Features
 
@@ -35,6 +37,12 @@ Multi-line format with split name fields
 
 ### MileSplit
 Results with logo markers and bib numbers
+
+### Athlete Guild
+Tab-separated format with Name, Bib, Team, Rank, Time
+
+### Endurance Splits
+Format with O'All Place, Score, Bib, Name, Team, Time, Pace
 
 ## Development
 
