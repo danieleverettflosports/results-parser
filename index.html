@@ -708,8 +708,8 @@ Akey
                 parts = line.trim().split('\t').map(p => p.trim()).filter(p => p);
             } else {
                 // For space-delimited, use a more careful split
-                // Match sequences of non-space chars OR content in parentheses
-                parts = line.trim().match(/\S+|\([^)]*\)/g);
+                // Match content in parentheses OR sequences of non-space chars
+                parts = line.trim().match(/\([^)]*\)|\S+/g);
                 if (!parts) return null;
             }
 
@@ -720,19 +720,12 @@ Akey
 
             let partIndex = 0;
 
-            // Skip O'All Place
+            // O'All Place - use this as the place
+            const place = parts[partIndex];
+            if (!place.match(/^\d+$/)) return null;
             partIndex++;
 
-            // Score (if contains < or > or parentheses, set to empty)
-            const score = parts[partIndex];
-            let place = '';
-            if (score.includes('<') || score.includes('>') || score.includes('(')) {
-                place = ''; // Keep the runner but no score
-            } else if (score.match(/^\d+$/)) {
-                place = score;
-            } else {
-                return null; // Invalid score format
-            }
+            // Score - skip this column entirely
             partIndex++;
 
             // Bib number
