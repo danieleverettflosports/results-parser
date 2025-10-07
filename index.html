@@ -1072,16 +1072,16 @@ Akey
             if (!place.match(/^\d+$/)) return null;
 
             // Find the bib number - it's a 2-4 digit number that comes after score
-            // Score could be a number or (< 5) or (<, 5)
+            // Score could be a number or (< 5) or (> 7) or (<, 5) or (>, 7)
             let bibIndex = -1;
 
-            if (parts[1].match(/^\(/) || parts[1] === '(<') {
-                // Score is "(< 5)" which might be split as "(<", "5)" or "(< 5)"
-                if (parts[1] === '(<') {
-                    // Split as "(<" "5)" - bib is at index 3
+            if (parts[1].match(/^\(/) || parts[1] === '(<' || parts[1] === '(>') {
+                // Score is "(< 5)" or "(> 7)" which might be split as "(<", "5)" or "(>", "7)" or as single token
+                if (parts[1] === '(<' || parts[1] === '(>') {
+                    // Split as "(<" "5)" or "(>" "7)" - bib is at index 3
                     bibIndex = 3;
                 } else {
-                    // "(< 5)" as single token - bib is at index 2
+                    // "(< 5)" or "(> 7)" as single token - bib is at index 2
                     bibIndex = 2;
                 }
             } else if (parts[1].match(/^\d+$/)) {
