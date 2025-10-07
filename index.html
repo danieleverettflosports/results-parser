@@ -512,8 +512,8 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
-                    // VFP: "1 (< 5) 594 Name Team Grade Time Pace" - has pace at end
-                    if (line.match(/^1\s+.*\d{1,2}:\d{2}\/M\s*$/i)) {
+                    // VFP: "1 (< 5) 594 Name..." or "1 1 35 Name..." - has pace at end
+                    if (line.match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M\s*$/i)) {
                         startIndex = i;
                         break;
                     }
@@ -569,8 +569,10 @@ Akey
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
                     // VFP format: "Place Score Bib No Name Team Grade Time Pace"
-                    // Pattern: starts with "1", has pace at end like "6:04/M"
-                    if (resultLines[i].match(/^1\s+.*\d{1,2}:\d{2}\/M\s*$/i)) {
+                    // Pattern: starts with "1" followed by number/score, has pace at end like "6:04/M"
+                    // Examples: "1 (< 5) 594 Name Team 9 12:08.84 6:04/M"
+                    //           "1 1 35 Lionel Vargas MARTIN 10 16:55.0 5:27/M"
+                    if (resultLines[i].match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M\s*$/i)) {
                         hasVFPPattern = true;
                         break;
                     }
@@ -824,10 +826,10 @@ Akey
                 const parts = remaining.trim().split(/\s+/);
                 if (parts.length < 5) continue; // Need Place Score Bib Name Team
 
-                // Find bib (3-4 digit number after score)
+                // Find bib (2-4 digit number after score)
                 let bibIndex = -1;
                 for (let i = 2; i < Math.min(parts.length, 5); i++) {
-                    if (parts[i].match(/^\d{3,4}$/)) {
+                    if (parts[i].match(/^\d{2,4}$/)) {
                         bibIndex = i;
                         break;
                     }
@@ -907,6 +909,7 @@ Akey
 
             if (bibIndex >= parts.length) return null;
             const bib = parts[bibIndex];
+            // Bib can be 2-4 digits (35, 594, etc.)
             if (!bib.match(/^\d{2,4}$/)) return null;
 
             // Everything between bib and grade is Name + Team
