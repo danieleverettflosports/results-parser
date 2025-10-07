@@ -531,7 +531,7 @@ Akey
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
                     // RaceDay Scoring format: "1    211    Teagan Kennedy        Maumee    1    36    1    00:18:03.10    5:49"
-                    if (line.match(/^1\s+\d{2,5}\s+\w+.*\s+\d{2}:\d{2}:\d{2}\.\d{2}\s+\d{1,2}:\d{2}/)) {
+                    if (line.match(/^1\s+\d{2,5}\s+\w+.*\d{2}:\d{2}:\d{2}\.\d+\s+\d{1,2}:\d{2}\s*$/)) {
                         startIndex = i;
                         break;
                     }
@@ -630,8 +630,9 @@ Akey
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
                     // RaceDay Scoring format: "1    211    Teagan Kennedy        Maumee    1    36    1    00:18:03.10    5:49"
-                    // Pattern: Place, Bib, Name, Year, Team, Score, TeamScore, TeamPlace, Time, Pace
-                    if (resultLines[i].match(/^1\s+\d{2,5}\s+\w+.*\s+\d{2}:\d{2}:\d{2}\.\d{2}\s+\d{1,2}:\d{2}/)) {
+                    // Pattern: Place, Bib, Name, Year, Team, Score, TeamScore, TeamPlace, Time (HH:MM:SS.XX), Pace
+                    // Key identifier: Has pace at end (M:SS format) AND time with HH:MM:SS format
+                    if (resultLines[i].match(/^1\s+\d{2,5}\s+\w+.*\d{2}:\d{2}:\d{2}\.\d+\s+\d{1,2}:\d{2}\s*$/)) {
                         hasRaceDayPattern = true;
                         break;
                     }
