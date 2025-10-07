@@ -1,0 +1,10 @@
+# Test files
+*.rtf
+*.txt
+
+# System files
+.DS_Store
+.claude/
+
+# Logs
+*.log

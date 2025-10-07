@@ -1,0 +1,50 @@
+# Race Results Extractor
+
+Transform messy race results into beautiful, organized data. Supports multiple platforms including:
+
+- **RunHigh**
+- **KarmaRush**
+- **RunSignup**
+- **MileSplit**
+
+## Features
+
+- 📋 Paste any supported race results format
+- ✨ Automatically detects the platform
+- 📊 Extracts and formats all runner data
+- 📋 Copy results as tab-separated values for Excel/Sheets
+- 🎨 Beautiful, responsive interface
+
+## Usage
+
+1. Visit the live site: [Race Results Extractor](https://your-site.vercel.app)
+2. Paste your race results into the input area
+3. Click "Extract Results"
+4. Copy the formatted data to Excel or Google Sheets
+
+## Supported Formats
+
+### RunHigh
+Supports the individual results format from runhigh.com
+
+### KarmaRush
+Tab-separated format with grade/bib information
+
+### RunSignup
+Multi-line format with split name fields
+
+### MileSplit
+Results with logo markers and bib numbers
+
+## Development
+
+To run locally:
+```bash
+python3 -m http.server 8000
+```
+
+Then open `http://localhost:8000/race-results.html`
+
+## Debug Mode
+
+Open `race-results-debug.html` for detailed parsing information and debugging.

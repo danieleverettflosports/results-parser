@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Race Results Extractor - Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        textarea { width: 100%; min-height: 200px; font-family: monospace; }
+        button { padding: 10px 20px; margin: 10px 5px 10px 0; }
+        #debug { background: #f5f5f5; padding: 15px; margin-top: 20px; white-space: pre-wrap; font-family: monospace; font-size: 12px; }
+        .error { color: red; font-weight: bold; }
+        .success { color: green; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>Race Results Extractor - Debug Mode</h1>
+
+    <textarea id="input" placeholder="Paste race results here..."></textarea>
+    <br>
+    <button onclick="extractResults()">Extract Results</button>
+    <button onclick="loadFile()">Load runhigh.txt</button>
+
+    <div id="debug"></div>
+    <div id="results"></div>
+
+    <script>
+        function log(message) {
+            const debugDiv = document.getElementById('debug');
+            debugDiv.innerHTML += message + '\n';
+        }
+
+        function loadFile() {
+            fetch('runhigh.txt')
+                .then(r => r.text())
+                .then(text => {
+                    document.getElementById('input').value = text;
+                    log('✓ Loaded runhigh.txt');
+                })
+                .catch(e => log('✗ Error loading file: ' + e));
+        }
+
+        function extractResults() {
+            document.getElementById('debug').innerHTML = '';
+            document.getElementById('results').innerHTML = '';
+
+            const input = document.getElementById('input').value;
+            if (!input.trim()) {
+                log('✗ ERROR: No input provided');
+                return;
+            }
+
+            log('Starting extraction...\n');
+
+            const lines = input.trim().split('\n').map(line => line.trim()).filter(line => line);
+            log(`Total lines after trim: ${lines.length}\n`);
+            log(`First 10 lines:`);
+            lines.slice(0, 10).forEach((line, i) => {
+                log(`  ${i}: "${line}"`);
+            });
+            log('');
+
+            // Look for Individuals section
+            let individualsIndex = -1;
+            for (let i = 0; i < lines.length; i++) {
+                if (lines[i].match(/^Individuals$/i) || lines[i].match(/ID#\s+POINTS/)) {
+                    individualsIndex = i;
+                    log(`✓ Found "Individuals" section at line ${i}: "${lines[i]}"`);
+                    break;
+                }
+            }
+
+            if (individualsIndex === -1) {
+                log('✗ Could not find "Individuals" section');
+                log('Searching for any line matching RunHigh pattern...\n');
+            }
+
+            // Search for first data line
+            const searchStart = individualsIndex >= 0 ? individualsIndex : 0;
+            let startIndex = -1;
+
+            log(`\nSearching from line ${searchStart}...`);
+            for (let i = searchStart; i < Math.min(searchStart + 50, lines.length); i++) {
+                const line = lines[i];
+
+                // RunHigh pattern: starts with whitespace and 3-4 digit number
+                if (line.match(/^\s*\d{3,4}\s+\d+\s+\d+\s+/)) {
+                    startIndex = i;
+                    log(`✓ Found first data line at ${i}: "${line}"`);
+                    break;
+                }
+
+                if (i < searchStart + 10) {
+                    log(`  Line ${i}: "${line.substring(0, 80)}"`);
+                }
+            }
+
+            if (startIndex === -1) {
+                log('\n✗ ERROR: Could not find start of race results data');
+                log('Expected format: "  ID#  POINTS  PLACE  Name, Grade  ...');
+                return;
+            }
+
+            log(`\n✓ Starting parsing from line ${startIndex}\n`);
+
+            // Parse RunHigh format
+            const results = [];
+            for (let i = startIndex; i < lines.length; i++) {
+                const line = lines[i];
+                const result = parseRunHighFormat(line);
+                if (result) {
+                    results.push(result);
+                    if (results.length <= 5) {
+                        log(`Parsed line ${i}: ${result.place}. ${result.name} - ${result.time}`);
+                    }
+                }
+            }
+
+            log(`\n✓ SUCCESS: Extracted ${results.length} results\n`);
+
+            if (results.length > 0) {
+                displayResults(results);
+            }
+        }
+
+        function parseRunHighFormat(line) {
+            // RunHigh format: "  ID#  POINTS  PLACE  Name, Grade  Split  Time  Pace  Team"
+            if (!line.match(/^\s*\d{3,4}\s+/)) {
+                return null;
+            }
+
+            let result = {
+                place: '',
+                points: '',
+                bib: '',
+                name: '',
+                grade: '',
+                team: '',
+                time: '',
+                pace: ''
+            };
+
+            // Split by multiple spaces (2 or more)
+            const parts = line.trim().split(/\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            if (parts.length < 5) return null;
+
+            let partIndex = 0;
+
+            // ID# (bib number)
+            if (partIndex < parts.length && parts[partIndex].match(/^\d{3,4}$/)) {
+                result.bib = parts[partIndex];
+                partIndex++;
+            }
+
+            // POINTS
+            if (partIndex < parts.length && parts[partIndex].match(/^\d+$/)) {
+                result.points = parts[partIndex];
+                partIndex++;
+            }
+
+            // PLACE
+            if (partIndex < parts.length && parts[partIndex].match(/^\d+$/)) {
+                result.place = parts[partIndex];
+                partIndex++;
+            }
+
+            // Name with grade - format "FirstName LastName, Grade"
+            if (partIndex < parts.length) {
+                const namePart = parts[partIndex];
+                const nameMatch = namePart.match(/^(.+),\s*(\d{1,2})$/);
+                if (nameMatch) {
+                    result.name = nameMatch[1].trim();
+                    result.grade = nameMatch[2];
+                    partIndex++;
+                } else {
+                    result.name = namePart;
+                    partIndex++;
+                }
+            }
+
+            // Skip split time
+            if (partIndex < parts.length && parts[partIndex].match(/^\d{1,2}:\d{2}\.\d+$/)) {
+                partIndex++;
+            }
+
+            // Final time
+            if (partIndex < parts.length && parts[partIndex].match(/^\d{1,2}:\d{2}\.\d+$/)) {
+                result.time = parts[partIndex];
+                partIndex++;
+            }
+
+            // Pace
+            if (partIndex < parts.length && parts[partIndex].match(/^\d{1,2}:\d{2}$/)) {
+                result.pace = parts[partIndex];
+                partIndex++;
+            }
+
+            // Team name
+            if (partIndex < parts.length) {
+                result.team = parts.slice(partIndex).join(' ').trim();
+            }
+
+            return (result.place && result.name && result.time) ? result : null;
+        }
+
+        function displayResults(results) {
+            const html = `
+                <h2>Results (${results.length})</h2>
+                <table border="1" cellpadding="5" style="border-collapse: collapse; margin-top: 20px;">
+                    <tr>
+                        <th>Place</th>
+                        <th>Bib</th>
+                        <th>Name</th>
+                        <th>Grade</th>
+                        <th>Team</th>
+                        <th>Time</th>
+                    </tr>
+                    ${results.map(r => `
+                        <tr>
+                            <td>${r.place}</td>
+                            <td>${r.bib}</td>
+                            <td>${r.name}</td>
+                            <td>${r.grade}</td>
+                            <td>${r.team}</td>
+                            <td>${r.time}</td>
+                        </tr>
+                    `).join('')}
+                </table>
+            `;
+            document.getElementById('results').innerHTML = html;
+        }
+    </script>
+</body>
+</html>
