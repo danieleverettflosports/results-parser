@@ -512,6 +512,11 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
+                    // Space-delimited: "1 NAME (TEAM) ..."
+                    if (line.match(/^1\s+[A-Z]+.*\([A-Z]{3,4}\)/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // RunHigh: starts with whitespace and 3-4 digit number followed by more numbers
                     // Format: " 1668     1     1  Gabe Simkiss, 11..."
                     if (line.match(/^\s*\d{3,4}\s+\d+\s+\d+\s+\w/)) {
