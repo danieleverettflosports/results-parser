@@ -512,6 +512,11 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
+                    // Endurance Splits: "1    1    1164    Name..."
+                    if (line.match(/^1\s+1\s+\d{3,4}\s+[A-Z]/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Space-delimited: "1 NAME (TEAM) ..." or multi-line with team on next line
                     if (line.match(/^1\s+[A-Z]+.*\([A-Z]{3,4}\)/i) ||
                         (line.match(/^1\s+[A-Z\s]+\s+[A-Z\s,]+\s+[MF]R?:/i) &&
@@ -548,8 +553,14 @@ Akey
                 let hasRunHighPattern = false;
                 
                 let hasSpaceDelimitedPattern = false;
+                let hasEnduranceSplitsPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // Endurance Splits format: "1    1    1164    Sofia Lauren Garza    Mission Sharyland    18:18.8    5:54/M"
+                    if (resultLines[i].match(/^\d+\s+\d+\s+\d{3,4}\s+[A-Z]/i)) {
+                        hasEnduranceSplitsPattern = true;
+                        break;
+                    }
                     // Space-delimited format: "1 EMILY GROSS (DUMA) DUMAS, TX F: 1 SO 1596 00:11:27.55..."
                     if (resultLines[i].match(/^\d+\s+[A-Z]+.*\([A-Z]{3,4}\).*[MF]R?:\s*\d+\s+(FR|SO|JR|SR|8th)/i)) {
                         hasSpaceDelimitedPattern = true;
@@ -587,7 +598,15 @@ Akey
                     }
                 }
                 
-                if (hasSpaceDelimitedPattern) {
+                if (hasEnduranceSplitsPattern) {
+                    // Process Endurance Splits format
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseEnduranceSplitsFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                } else if (hasSpaceDelimitedPattern) {
                     // Process space-delimited format
                     for (let i = 0; i < resultLines.length; i++) {
                         let result = parseSpaceDelimitedFormat(resultLines[i], i + 1 < resultLines.length ? resultLines[i + 1] : '');
@@ -678,6 +697,58 @@ Akey
             }
         }
         
+        function parseEnduranceSplitsFormat(line) {
+            // Format: "1    1    1164    Sofia Lauren Garza    Mission Sharyland    18:18.8    5:54/M"
+            // Columns: O'All Place, Score, Bib No, Name, Team, Time, Pace
+            // Skip lines with (< 5) or similar in score column
+
+            const parts = line.trim().split(/\s{2,}/).map(p => p.trim());
+
+            if (parts.length < 6) return null;
+
+            // First part should be a number (O'All Place)
+            if (!parts[0].match(/^\d+$/)) return null;
+
+            let partIndex = 0;
+
+            // Skip O'All Place
+            partIndex++;
+
+            // Score (skip if contains < or >)
+            const score = parts[partIndex];
+            if (score.includes('<') || score.includes('>')) {
+                return null;
+            }
+            partIndex++;
+
+            // Bib number
+            const bib = parts[partIndex];
+            if (!bib.match(/^\d{3,4}$/)) return null;
+            partIndex++;
+
+            // Name
+            const name = parts[partIndex];
+            partIndex++;
+
+            // Team
+            const team = parts[partIndex];
+            partIndex++;
+
+            // Time
+            const time = parts[partIndex];
+
+            return {
+                place: score,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: '',
+                pace: ''
+            };
+        }
+
         function parseSpaceDelimitedFormat(line, nextLine) {
             // Format: "1 EMILY GROSS (DUMA) DUMAS, TX F: 1 SO 1596 00:11:27.55 05:43 10.5mph :"
             // Or multi-line:
