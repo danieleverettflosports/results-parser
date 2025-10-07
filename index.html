@@ -1012,16 +1012,41 @@ Akey
                 time = time.substring(3);
             }
 
-            // Team - could be at column 7 or 8 depending on format
-            // Try column 7 first (Performance Timing format)
-            let team = parts[7];
+            // Team - varies by format and whether Team Points is filled
+            // Performance Timing with Team Points: Pos, Race No, Name, Time, Age Group, Team Points, Gender, Team, Pos In Team, Pace
+            //   After split: [0-Pos, 1-RaceNo, 2-Name, 3-Time, 4-AgeGroup, 5-TeamPts, 6-Gender, 7-Team, 8-PosInTeam, 9-Pace]
+            // Performance Timing without Team Points: Pos, Race No, Name, Time, Age Group, Gender, Team, Pos In Team, Pace
+            //   After split: [0-Pos, 1-RaceNo, 2-Name, 3-Time, 4-AgeGroup, 5-Gender, 6-Team, 7-PosInTeam, 8-Pace]
+            // Other Web Timer: Pos, Race No, Name, Time, Division, Division Pos, Gender, Gen Pos, Team, Team Pos
+            //   After split: [0-Pos, 1-RaceNo, 2-Name, 3-Time, 4-Div, 5-DivPos, 6-Gender, 7-GenPos, 8-Team, 9-TeamPos]
 
-            // If column 7 is "Male" or "Female", team is at column 8 (other web timer format)
-            if (team === 'Male' || team === 'Female') {
+            let team = null;
+
+            // Find Gender column first
+            let genderIndex = -1;
+            for (let i = 5; i < Math.min(parts.length, 8); i++) {
+                if (parts[i] === 'Male' || parts[i] === 'Female') {
+                    genderIndex = i;
+                    break;
+                }
+            }
+
+            if (genderIndex === -1) return null;
+
+            // Team is 1 or 2 positions after Gender
+            if (genderIndex === 5) {
+                // Performance Timing without Team Points: Gender at 5, Team at 6
+                team = parts[6];
+            } else if (genderIndex === 6) {
+                // Performance Timing with Team Points: Gender at 6, Team at 7
+                team = parts[7];
+            } else if (genderIndex === 7) {
+                // Other Web Timer: Gender at 7, skip Gen Pos, Team at 8
                 team = parts.length > 8 ? parts[8] : null;
             }
 
-            if (!team || team.length === 0) return null;
+            // Validate team is not a single/double digit number (which would be Pos In Team)
+            if (!team || team.length === 0 || team.match(/^\d{1,2}$/)) return null;
 
             return {
                 place: place,
