@@ -702,8 +702,16 @@ Akey
             // Columns: O'All Place, Score, Bib No, Name, Team, Time, Pace
             // Skip lines with (< 5) or similar in score column
 
-            // Split by tabs or multiple spaces (2+)
-            const parts = line.trim().split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+            // Split by tabs first, then by multiple spaces if no tabs
+            let parts;
+            if (line.includes('\t')) {
+                parts = line.trim().split('\t').map(p => p.trim()).filter(p => p);
+            } else {
+                // For space-delimited, use a more careful split
+                // Match sequences of non-space chars OR content in parentheses
+                parts = line.trim().match(/\S+|\([^)]*\)/g);
+                if (!parts) return null;
+            }
 
             if (parts.length < 6) return null;
 
