@@ -676,13 +676,19 @@ Akey
 
             if (!match) return null;
 
+            // Clean up time - remove leading "00:" if present
+            let time = match[8].trim();
+            if (time.startsWith('00:')) {
+                time = time.substring(3);
+            }
+
             return {
                 place: match[1].trim(),
                 name: match[2].trim(),
                 team: match[3].trim(),
                 grade: match[6].trim().toUpperCase(),
                 bib: match[7].trim(),
-                time: match[8].trim(),
+                time: time,
                 points: '',
                 pace: ''
             };
