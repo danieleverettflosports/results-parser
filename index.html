@@ -512,8 +512,11 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
-                    // Space-delimited: "1 NAME (TEAM) ..."
-                    if (line.match(/^1\s+[A-Z]+.*\([A-Z]{3,4}\)/i)) {
+                    // Space-delimited: "1 NAME (TEAM) ..." or multi-line with team on next line
+                    if (line.match(/^1\s+[A-Z]+.*\([A-Z]{3,4}\)/i) ||
+                        (line.match(/^1\s+[A-Z\s]+\s+[A-Z\s,]+\s+[MF]R?:/i) &&
+                         i + 1 < lines.length &&
+                         lines[i + 1].match(/^\([A-Z]{3,4}\)/i))) {
                         startIndex = i;
                         break;
                     }
@@ -548,7 +551,14 @@ Akey
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
                     // Space-delimited format: "1 EMILY GROSS (DUMA) DUMAS, TX F: 1 SO 1596 00:11:27.55..."
-                    if (resultLines[i].match(/^\d+\s+[A-Z]+.*\([A-Z]{4}\).*[FS]R?:\s*\d+\s+(FR|SO|JR|SR|8th)/i)) {
+                    if (resultLines[i].match(/^\d+\s+[A-Z]+.*\([A-Z]{3,4}\).*[MF]R?:\s*\d+\s+(FR|SO|JR|SR|8th)/i)) {
+                        hasSpaceDelimitedPattern = true;
+                        break;
+                    }
+                    // Multi-line space-delimited: team on next line
+                    if (resultLines[i].match(/^\d+\s+[A-Z\s]+\s+[A-Z\s,]+\s+[MF]R?:\s*\d+\s+(FR|SO|JR|SR|8th)/i) &&
+                        i + 1 < resultLines.length &&
+                        resultLines[i + 1].match(/^\([A-Z]{3,4}\)/i)) {
                         hasSpaceDelimitedPattern = true;
                         break;
                     }
@@ -580,7 +590,7 @@ Akey
                 if (hasSpaceDelimitedPattern) {
                     // Process space-delimited format
                     for (let i = 0; i < resultLines.length; i++) {
-                        let result = parseSpaceDelimitedFormat(resultLines[i]);
+                        let result = parseSpaceDelimitedFormat(resultLines[i], i + 1 < resultLines.length ? resultLines[i + 1] : '');
                         if (result) {
                             extractedResults.push(result);
                         }
@@ -668,30 +678,60 @@ Akey
             }
         }
         
-        function parseSpaceDelimitedFormat(line) {
+        function parseSpaceDelimitedFormat(line, nextLine) {
             // Format: "1 EMILY GROSS (DUMA) DUMAS, TX F: 1 SO 1596 00:11:27.55 05:43 10.5mph :"
-            // Pattern: Place Name (Team) Hometown Gender:? Grade Bib# Time Pace Speed Division Rank
+            // Or multi-line:
+            // "1 CHRISTIAN VALENZUELA MIDLAND, TX M: 1 JR 2818 00:17:26.91..."
+            // "(MILE)"
 
-            const match = line.match(/^(\d+)\s+([A-Z\s]+)\s*\(([A-Z]{3,4})\)\s*(.+?)\s+([MF])R?:\s*\d+\s+(FR|SO|JR|SR|8th|\d{1,2}th)\s+(\d+)\s+([\d:\.]+)/i);
+            // Try single-line format first (team in parentheses on same line)
+            let match = line.match(/^(\d+)\s+([A-Z\s]+)\s*\(([A-Z]{3,4})\)\s*(.+?)\s+([MF])R?:\s*\d+\s+(FR|SO|JR|SR|8th|\d{1,2}th)\s+(\d+)\s+([\d:\.]+)/i);
 
-            if (!match) return null;
+            if (match) {
+                // Clean up time - remove leading "00:" if present
+                let time = match[8].trim();
+                if (time.startsWith('00:')) {
+                    time = time.substring(3);
+                }
 
-            // Clean up time - remove leading "00:" if present
-            let time = match[8].trim();
-            if (time.startsWith('00:')) {
-                time = time.substring(3);
+                return {
+                    place: match[1].trim(),
+                    name: match[2].trim(),
+                    team: match[3].trim(),
+                    grade: match[6].trim().toUpperCase(),
+                    bib: match[7].trim(),
+                    time: time,
+                    points: '',
+                    pace: ''
+                };
             }
 
-            return {
-                place: match[1].trim(),
-                name: match[2].trim(),
-                team: match[3].trim(),
-                grade: match[6].trim().toUpperCase(),
-                bib: match[7].trim(),
-                time: time,
-                points: '',
-                pace: ''
-            };
+            // Try multi-line format (team on next line)
+            match = line.match(/^(\d+)\s+([A-Z\s]+)\s+(.+?)\s+([MF])R?:\s*\d+\s+(FR|SO|JR|SR|8th|\d{1,2}th)\s+(\d+)\s+([\d:\.]+)/i);
+
+            if (match && nextLine) {
+                const teamMatch = nextLine.match(/^\(([A-Z]{3,4})\)/i);
+                if (teamMatch) {
+                    // Clean up time - remove leading "00:" if present
+                    let time = match[7].trim();
+                    if (time.startsWith('00:')) {
+                        time = time.substring(3);
+                    }
+
+                    return {
+                        place: match[1].trim(),
+                        name: match[2].trim(),
+                        team: teamMatch[1].trim(),
+                        grade: match[5].trim().toUpperCase(),
+                        bib: match[6].trim(),
+                        time: time,
+                        points: '',
+                        pace: ''
+                    };
+                }
+            }
+
+            return null;
         }
 
         function parseRunHighFormat(line) {
