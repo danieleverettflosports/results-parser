@@ -1431,12 +1431,17 @@ Akey
                 const place = parts[0];
                 if (!place.match(/^\d+$/)) return null;
 
-                // Points (optional) - last column if it's a number
+                // Points (optional) - last column if it's a number AND there are enough parts
                 let points = '';
                 let endIndex = parts.length;
-                if (parts[parts.length - 1].match(/^\d+$/)) {
-                    points = parts[parts.length - 1];
-                    endIndex--;
+
+                // Check if last element is points (single/double digit number)
+                if (parts.length >= 6 && parts[parts.length - 1].match(/^\d{1,2}$/)) {
+                    // Make sure the second-to-last is the time
+                    if (parts[parts.length - 2].match(/^\d{1,2}:\d{2}\.\d$/)) {
+                        points = parts[parts.length - 1];
+                        endIndex--;
+                    }
                 }
 
                 // Time - before points (MM:SS.S format)
@@ -1444,18 +1449,25 @@ Akey
                 if (!time || !time.match(/^\d{1,2}:\d{2}\.\d$/)) return null;
                 endIndex--;
 
-                // Team - before time
-                const team = parts[endIndex - 1];
-                if (!team || team.length === 0) return null;
-                endIndex--;
+                // Find grade by scanning backwards from time
+                // Grade is the first number (7-12) we find before the time
+                let gradeIndex = -1;
+                for (let i = endIndex - 1; i >= 1; i--) {
+                    if (parts[i].match(/^(7|8|9|10|11|12)$/)) {
+                        gradeIndex = i;
+                        break;
+                    }
+                }
+                if (gradeIndex === -1) return null;
 
-                // Grade - before team
-                const grade = parts[endIndex - 1];
-                if (!grade.match(/^(7|8|9|10|11|12)$/)) return null;
-                endIndex--;
+                const grade = parts[gradeIndex];
+
+                // Team - everything between grade and time
+                const team = parts.slice(gradeIndex + 1, endIndex).join(' ');
+                if (!team || team.length === 0) return null;
 
                 // Name - everything between place and grade
-                const name = parts.slice(1, endIndex).join(' ');
+                const name = parts.slice(1, gradeIndex).join(' ');
                 if (!name || name.length === 0) return null;
 
                 return {
