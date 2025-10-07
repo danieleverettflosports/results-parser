@@ -702,8 +702,8 @@ Akey
             // Columns: O'All Place, Score, Bib No, Name, Team, Time, Pace
             // Skip lines with (< 5) or similar in score column
 
-            // Split by tabs or multiple spaces (4+)
-            const parts = line.trim().split(/\t|\s{4,}/).map(p => p.trim()).filter(p => p);
+            // Split by tabs or multiple spaces (2+)
+            const parts = line.trim().split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
 
             if (parts.length < 6) return null;
 
