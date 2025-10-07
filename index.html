@@ -812,8 +812,15 @@ Akey
             partIndex++;
 
             // Chip Time
-            const time = parts[partIndex];
+            let time = parts[partIndex];
             if (!time || !time.match(/\d+:\d+/)) return null;
+
+            // Round to 2 decimal places if it has more
+            const timeMatch = time.match(/^(\d+:\d+)\.(\d+)$/);
+            if (timeMatch && timeMatch[2].length > 2) {
+                const decimal = timeMatch[2].substring(0, 2);
+                time = `${timeMatch[1]}.${decimal}`;
+            }
 
             return {
                 place: place,
