@@ -623,8 +623,11 @@ Akey
                 
                 if (hasVFPPattern) {
                     // Process VFP format
+                    // First, identify team names from the data
+                    const knownTeams = identifyVFPTeams(resultLines);
+
                     for (let i = 0; i < resultLines.length; i++) {
-                        let result = parseVFPFormat(resultLines[i]);
+                        let result = parseVFPFormat(resultLines[i], knownTeams);
                         if (result) {
                             extractedResults.push(result);
                         }
@@ -798,7 +801,58 @@ Akey
             };
         }
 
-        function parseVFPFormat(line) {
+        function identifyVFPTeams(lines) {
+            // First pass: identify team names by finding repeated patterns at the end of lines
+            const potentialTeams = {};
+
+            for (const line of lines) {
+                const trimmed = line.trim();
+                const paceMatch = trimmed.match(/\s+(\d{1,2}:\d{2}\/M)\s*$/);
+                if (!paceMatch) continue;
+
+                let remaining = trimmed.substring(0, trimmed.length - paceMatch[0].length);
+                const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d{2})\s*$/);
+                if (!timeMatch) continue;
+
+                remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
+                const gradeMatch = remaining.match(/\s+(\d{1,2})\s*$/);
+                if (!gradeMatch) continue;
+
+                remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
+
+                // Extract everything after the bib number
+                const parts = remaining.trim().split(/\s+/);
+                if (parts.length < 5) continue; // Need Place Score Bib Name Team
+
+                // Find bib (3-4 digit number after score)
+                let bibIndex = -1;
+                for (let i = 2; i < Math.min(parts.length, 5); i++) {
+                    if (parts[i].match(/^\d{3,4}$/)) {
+                        bibIndex = i;
+                        break;
+                    }
+                }
+                if (bibIndex === -1) continue;
+
+                const afterBib = parts.slice(bibIndex + 1);
+                if (afterBib.length < 3) continue;
+
+                // Try different team name lengths (1-4 words from the end)
+                for (let teamLen = 1; teamLen <= Math.min(4, afterBib.length - 2); teamLen++) {
+                    const teamName = afterBib.slice(-teamLen).join(' ');
+                    potentialTeams[teamName] = (potentialTeams[teamName] || 0) + 1;
+                }
+            }
+
+            // Return teams that appear 2+ times
+            const confirmedTeams = Object.keys(potentialTeams)
+                .filter(team => potentialTeams[team] >= 2)
+                .sort((a, b) => b.split(' ').length - a.split(' ').length); // Longer names first
+
+            return confirmedTeams;
+        }
+
+        function parseVFPFormat(line, knownTeams = []) {
             // Format: "Place    Score    Bib No    Name    Team    Grade    Time    Pace"
             // Example: "1    (< 5)    594    Jose Luis Flores    Laredo Harmony School    9    12:08.84    6:04/M"
             // When copied from PDF: "1 (< 5) 594 Jose Luis Flores Laredo Harmony School 9 12:08.84 6:04/M"
@@ -844,31 +898,37 @@ Akey
 
             // Everything between bib and grade is Name + Team
             const nameTeamParts = parts.slice(bibIndex + 1);
-            if (nameTeamParts.length < 2) return null;
+            if (nameTeamParts.length < 3) return null; // Need at least First Last Team
 
-            // Heuristic: Names are typically 2-3 words (First Last or First Middle Last)
-            // Teams can have multiple words and may start with abbreviations like "CC"
-            // Strategy: Try to find where the team starts by looking for capital initials or known patterns
+            let name, team;
 
-            let nameEndIndex = 2; // Default: assume 2 words for name (First Last)
+            // If we have known teams, try to match from the end
+            if (knownTeams && knownTeams.length > 0) {
+                const nameTeamStr = nameTeamParts.join(' ');
+                let matched = false;
 
-            // If there are 4+ words total, check if word 3 or 4 looks like a team prefix
-            if (nameTeamParts.length >= 4) {
-                // Check if 3rd word is a short abbreviation (like "CC", "HS", etc.)
-                if (nameTeamParts[2].length <= 3 && nameTeamParts[2].match(/^[A-Z]+$/)) {
-                    nameEndIndex = 2; // Keep 2 words for name
-                } else if (nameTeamParts.length >= 5 && nameTeamParts[3].length <= 3 && nameTeamParts[3].match(/^[A-Z]+$/)) {
-                    nameEndIndex = 3; // 3 words for name (First Middle Last)
-                } else {
-                    // No obvious team prefix, assume 3 words for name if available
-                    nameEndIndex = Math.min(3, nameTeamParts.length - 1);
+                // Try to match known teams (longest first)
+                for (const knownTeam of knownTeams) {
+                    if (nameTeamStr.endsWith(knownTeam)) {
+                        team = knownTeam;
+                        name = nameTeamStr.substring(0, nameTeamStr.length - knownTeam.length).trim();
+                        matched = true;
+                        break;
+                    }
                 }
+
+                if (!matched) {
+                    // Fallback to 2-word name
+                    name = nameTeamParts.slice(0, 2).join(' ');
+                    team = nameTeamParts.slice(2).join(' ');
+                }
+            } else {
+                // No known teams, use simple heuristic: First 2 words are name
+                name = nameTeamParts.slice(0, 2).join(' ');
+                team = nameTeamParts.slice(2).join(' ');
             }
 
-            const name = nameTeamParts.slice(0, nameEndIndex).join(' ');
-            const team = nameTeamParts.slice(nameEndIndex).join(' ');
-
-            if (!team || team.length === 0) return null;
+            if (!team || team.length === 0 || !name || name.length === 0) return null;
 
             return {
                 place: place,
