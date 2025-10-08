@@ -588,6 +588,11 @@ Akey
                         startIndex = i;
                         break;
                     }
+                    // Runnercard: "1.    58    River Shaw    Jr    1.    Grand County HS    16:52.9    1"
+                    if (line.match(/^1\.\s+\d{1,3}\s+\w+\s+\w+\s+(Fr|So|Jr|Sr)\s+\d+\.\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Athlete Guild: "Name    Bib    Team    Rank    Time..."
                     if (line.match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{2,4}(\t|\s{2,})[A-Z]/i)) {
                         startIndex = i;
