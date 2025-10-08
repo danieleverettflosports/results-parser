@@ -262,7 +262,20 @@
         .place-cell.bronze {
             color: #ed8936;
         }
-        
+
+        .race-header-row {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+
+        .race-header {
+            text-align: center;
+            font-weight: 700;
+            font-size: 1.1em;
+            color: white;
+            padding: 12px !important;
+            letter-spacing: 0.5px;
+        }
+
         .bib-cell {
             font-family: 'Monaco', 'Menlo', monospace;
             color: #718096;
@@ -629,14 +642,24 @@ Akey
                 let hasEnduranceSplitsPattern = false;
                 let hasAthleteGuildPattern = false;
                 let hasVFPPattern = false;
+                let hasWyoPrepsPattern = false;
                 let hasWebTimerPattern = false;
                 let hasRCCPattern = false;
                 let hasOklahomaPattern = false;
                 let hasWebscorerPattern = false;
                 let hasRaceDayPattern = false;
                 let hasTiffinPattern = false;
+                let hasMeetProPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // MeetPro format: "1    ESEVERRI, Diego    SR    568    Columbus    1    15:30.6    ---    4:59.2"
+                    // Also: "1    SARCOS, Valentina        1939    Miami Vice Project    --    11:34.6    ---    6:13.4" (no grade)
+                    // Pattern: Place, Name (LAST, First), Year (optional), Bib, Team, Score, Time, Gap, Avg. Mile
+                    // Key: Last name first with comma, has gap column (--- or time), tab or multi-space separated
+                    if (resultLines[i].match(/^1\s+[A-Z]+,\s+\w+(\s+(FR|SO|JR|SR|[6-8]))?\s+\d{1,5}\s+[\w\s.'-]+\s+(--|\d+)\s+\d{1,2}:\d{2}\.\d+\s+(---|(\d{1,2}:\d{2}\.\d+|\d+\.\d+))\s+\d{1,2}:\d{2}\.\d/i)) {
+                        hasMeetProPattern = true;
+                        break;
+                    }
                     // Tiffin format: "1 Andrew Seiverth 12 Perrysburg 17:35.4 1"
                     // Pattern: Place, Name, Grade (7-12), Team, Time (MM:SS.S), Points (optional)
                     // Key: Single-space separated with MM:SS.S time format (1 decimal)
@@ -694,6 +717,14 @@ Akey
                         hasVFPPattern = true;
                         break;
                     }
+                    // WyoPreps format: "Place    Bib    Name    Year    Team Name    Score    Team Score    Team Place    Clock Time    Pace"
+                    // Pattern: 4-digit bib, grade (9-12), time (MM:SS.S), pace without /M (M:SS)
+                    // Example: "1    3677    Raina Wachob    10    Cody High School    1    19    1    20:59.7    6:46"
+                    // Key: Has pace at end (M:SS) without /M suffix, time is MM:SS.S, score can be "(7)" or "> 7"
+                    if (resultLines[i].match(/^1\s+\d{4}\s+\w+\s+\w+\s+(9|10|11|12)\s+.*\s+\d{1,2}:\d{2}\.\d\s+\d{1,2}:\d{2}\s*$/)) {
+                        hasWyoPrepsPattern = true;
+                        break;
+                    }
                     // Athlete Guild format: "Name    Bib    Team    Rank    Chip Time    Pace"
                     if (resultLines[i].match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{2,4}(\t|\s{2,})[A-Z]/i)) {
                         hasAthleteGuildPattern = true;
@@ -740,8 +771,81 @@ Akey
                         break;
                     }
                 }
-                
-                if (hasTiffinPattern) {
+
+                if (hasMeetProPattern) {
+                    // Process MeetPro format
+                    let lastHeaderCandidate = null;
+                    let justSawRaceNumber = false;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check if this is a "Race #X" line
+                        if (line.match(/^Race\s+#\d+/i)) {
+                            justSawRaceNumber = true;
+                            continue; // Skip this line, but remember we saw it
+                        }
+
+                        // Check for race headers (e.g., "1A 2A JV Boys", "MS Boys 3000")
+                        // Pattern: contains "boys" or "girls" or "varsity" or "jv" and is a short line without data structure
+                        // Also skip table header lines like "Individual Results", "Athlete", etc.
+                        if (line &&
+                            line.match(/(?:boys|girls|men|women|varsity|jv)/i) &&
+                            !line.includes('\t') &&
+                            !line.match(/^\d+\s{2,}/) &&
+                            !line.match(/^(Place|Athlete|Individual|Team|Final|Yr\.|#|Score|Time|Gap|Avg)/i) &&
+                            line.length < 50) {
+                            // If we just saw "Race #X", this is definitely a header
+                            if (justSawRaceNumber) {
+                                lastHeaderCandidate = line.toUpperCase();
+                                justSawRaceNumber = false;
+                            } else {
+                                // Store as candidate, don't add yet
+                                lastHeaderCandidate = line.toUpperCase();
+                            }
+                        }
+                        // Check if we're at "Individual Results" - this means the last header candidate is the real header
+                        else if (line.match(/^Individual\s+Results/i) && lastHeaderCandidate) {
+                            // Add the header now that we know it's real
+                            extractedResults.push({
+                                isHeader: true,
+                                headerText: lastHeaderCandidate,
+                                place: '',
+                                bib: '',
+                                name: '',
+                                team: '',
+                                time: '',
+                                grade: '',
+                                points: '',
+                                pace: ''
+                            });
+                            lastHeaderCandidate = null; // Clear it so we don't add it again
+                        } else {
+                            justSawRaceNumber = false; // Reset if we see any other line
+
+                            let result = parseMeetProFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate,
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                } else if (hasTiffinPattern) {
                     // Process Tiffin format
                     // Handle multi-line names by merging continuation lines
                     for (let i = 0; i < resultLines.length; i++) {
@@ -811,6 +915,14 @@ Akey
 
                     for (let i = 0; i < resultLines.length; i++) {
                         let result = parseVFPFormat(resultLines[i], knownTeams);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                } else if (hasWyoPrepsPattern) {
+                    // Process WyoPreps format
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseWyoPrepsFormat(resultLines[i]);
                         if (result) {
                             extractedResults.push(result);
                         }
@@ -1142,6 +1254,82 @@ Akey
             };
         }
 
+        function parseWyoPrepsFormat(line) {
+            // Format: "Place    Bib    Name    Year    Team Name    Score    Team Score    Team Place    Clock Time    Pace"
+            // Example: "1    3677    Raina Wachob    10    Cody High School    1    19    1    20:59.7    6:46"
+            // Example: "7    3670    Danielle Foote    10    Cody High School    (7)    19    1    22:32.0    7:16"
+            // Example: "13    3675    Sunday Schuh    12    Cody High School    > 7    19    1    22:58.6    7:25"
+            // Pattern: Tab or multi-space separated
+            // Score can be: number, (number), or "> 7"
+
+            const trimmed = line.trim();
+
+            // Parse from right to left (more reliable)
+            // Pace at end: "6:46" (M:SS format without /M)
+            const paceMatch = trimmed.match(/\s+(\d{1,2}:\d{2})\s*$/);
+            if (!paceMatch) return null;
+            const pace = paceMatch[1];
+            let remaining = trimmed.substring(0, trimmed.length - paceMatch[0].length);
+
+            // Clock Time before pace: "20:59.7" (MM:SS.S format)
+            const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d)\s*$/);
+            if (!timeMatch) return null;
+            const time = timeMatch[1];
+            remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
+
+            // Team Place before time: "1" (1 or 2 digits)
+            const teamPlaceMatch = remaining.match(/\s+(\d{1,2})\s*$/);
+            if (!teamPlaceMatch) return null;
+            remaining = remaining.substring(0, remaining.length - teamPlaceMatch[0].length);
+
+            // Team Score before Team Place: "19" (1-3 digits)
+            const teamScoreMatch = remaining.match(/\s+(\d{1,3})\s*$/);
+            if (!teamScoreMatch) return null;
+            remaining = remaining.substring(0, remaining.length - teamScoreMatch[0].length);
+
+            // Score before Team Score: can be number, (number), or "> 7" or "< 5"
+            // Match any of these patterns
+            const scoreMatch = remaining.match(/\s+(>|<)?\s*(\d+|\(\d+\))\s*$/);
+            if (!scoreMatch) return null;
+            remaining = remaining.substring(0, remaining.length - scoreMatch[0].length);
+
+            // Now from left: Place, Bib, Name (2 words), Year, Team (multi-word)
+            const parts = remaining.trim().split(/\s+/);
+            if (parts.length < 6) return null; // Need Place, Bib, FirstName, LastName, Year, Team (at least 1 word)
+
+            // Place
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Bib (4 digits, but could be 3 in some cases)
+            const bib = parts[1];
+            if (!bib.match(/^\d{3,5}$/)) return null;
+
+            // Name (2 words: First Last)
+            const firstName = parts[2];
+            const lastName = parts[3];
+            const name = `${firstName} ${lastName}`;
+
+            // Year/Grade
+            const year = parts[4];
+            if (!year.match(/^(7|8|9|10|11|12)$/)) return null;
+
+            // Team (everything remaining - could be multi-word)
+            const team = parts.slice(5).join(' ');
+            if (!team || team.length === 0) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: year,
+                points: '',
+                pace: pace
+            };
+        }
+
         function parseRCCFormat(line) {
             // Format: "Overall Score Bib# Name Class Chip Time Team"
             // Example: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
@@ -1420,6 +1608,74 @@ Akey
                 grade: grade,
                 points: '',
                 pace: pace
+            };
+        }
+
+        function parseMeetProFormat(line) {
+            // Format: Place, Name (LAST, First), Yr., #, Team, Score, Time, Gap, Avg. Mile
+            // Example: "1    ESEVERRI, Diego    SR    568    Columbus    1    15:30.6    ---    4:59.2"
+            // Example: "2    GARGANO, Massimo    SR    567    Columbus    2    15:46.1    15.5    5:04.2"
+            // Example: "1    MYERS, Colton    8    3006    Trinity    1    11:35.5    ---    5:47/M"
+            // Example with no grade: "2    LEFKO, Noah        3275    WIND Runners    1    10:15.7    16.7    5:31.0"
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines
+            if (!trimmed || trimmed.match(/^(Place|Athlete|Individual|Team|---+|\d+\)|Yr\.|#|Score|Time|Gap|Avg)/i)) {
+                return null;
+            }
+
+            // Split by tabs or multiple spaces
+            let parts = trimmed.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            // Need at least: Place, Name, Bib, Team, Score, Time (6 fields minimum if no grade)
+            if (parts.length < 6) return null;
+
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Name is in format "LAST, First" or "LAST, First Middle"
+            const name = parts[1];
+            if (!name || !name.includes(',')) return null;
+
+            // Check if parts[2] is a grade (FR, SO, JR, SR, or 6-8) or a bib number
+            let grade = '';
+            let bibIndex = 2;
+
+            if (parts[2] && parts[2].match(/^(FR|SO|JR|SR|[6-8])$/i)) {
+                // Grade is present
+                grade = parts[2].toUpperCase();
+                bibIndex = 3;
+            }
+            // else: No grade, bibIndex stays at 2
+
+            // Bib number
+            const bib = parts[bibIndex];
+            if (!bib || !bib.match(/^\d+$/)) return null;
+
+            // Team name
+            const team = parts[bibIndex + 1];
+            if (!team || team.length === 0) return null;
+
+            // Score (can be a number or "--" or other markers)
+            const score = parts[bibIndex + 2];
+
+            // Time (MM:SS.S format)
+            const time = parts[bibIndex + 3];
+            if (!time || !time.match(/^\d{1,2}:\d{2}\.\d/)) return null;
+
+            // Gap is parts[bibIndex + 4] - we ignore it
+            // Avg. Mile/Pace is parts[bibIndex + 5] - optional
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: grade,
+                points: score && score.match(/^\d+$/) ? score : '',
+                pace: ''
             };
         }
 
@@ -2084,11 +2340,20 @@ Akey
             }
             
             tbody.innerHTML = extractedResults.map((r, index) => {
+                // Check if this is a header row
+                if (r.isHeader) {
+                    return `
+                        <tr class="race-header-row">
+                            <td colspan="6" class="race-header">${r.headerText}</td>
+                        </tr>
+                    `;
+                }
+
                 let placeClass = 'place-cell';
                 if (r.place === '1') placeClass += ' gold';
                 else if (r.place === '2') placeClass += ' silver';
                 else if (r.place === '3') placeClass += ' bronze';
-                
+
                 return `
                     <tr>
                         <td class="${placeClass}">${r.place}</td>
@@ -2108,14 +2373,18 @@ Akey
                 return;
             }
             
-            const delimiter = document.getElementById('delimiter').value === 'csv' ? ',' : 
+            const delimiter = document.getElementById('delimiter').value === 'csv' ? ',' :
                             document.getElementById('delimiter').value === 'pipe' ? '|' : '\t';
-            
+
             const header = ['Place', 'Bib', 'Name', 'Grade', 'Team', 'Time'].join(delimiter);
-            const rows = extractedResults.map(r => 
-                [r.place, r.bib, r.name, r.grade, r.team, r.time].join(delimiter)
-            );
-            
+            const rows = extractedResults.map(r => {
+                // If it's a header row, output the header text across all columns
+                if (r.isHeader) {
+                    return r.headerText;
+                }
+                return [r.place, r.bib, r.name, r.grade, r.team, r.time].join(delimiter);
+            });
+
             const output = [header, ...rows].join('\n');
             
             copyToClipboard(output);
@@ -2129,12 +2398,16 @@ Akey
             }
             
             const delimiter = '\t';
-            
+
             const header = ['Place', 'Bib', 'Name', 'Grade', 'Team', 'Time'].join(delimiter);
-            const rows = extractedResults.map(r => 
-                [r.place, r.bib, r.name, r.grade, r.team, r.time].join(delimiter)
-            );
-            
+            const rows = extractedResults.map(r => {
+                // If it's a header row, output the header text across all columns
+                if (r.isHeader) {
+                    return r.headerText;
+                }
+                return [r.place, r.bib, r.name, r.grade, r.team, r.time].join(delimiter);
+            });
+
             const output = [header, ...rows].join('\n');
             
             copyToClipboard(output);
