@@ -643,6 +643,7 @@ Akey
                 let hasAthleteGuildPattern = false;
                 let hasVFPPattern = false;
                 let hasWyoPrepsPattern = false;
+                let hasRunnercardPattern = false;
                 let hasWebTimerPattern = false;
                 let hasRCCPattern = false;
                 let hasOklahomaPattern = false;
@@ -723,6 +724,14 @@ Akey
                     // Key: Has pace at end (M:SS) without /M suffix, time is MM:SS.S, score can be "(7)" or "> 7"
                     if (resultLines[i].match(/^1\s+\d{4}\s+\w+\s+\w+\s+(9|10|11|12)\s+.*\s+\d{1,2}:\d{2}\.\d\s+\d{1,2}:\d{2}\s*$/)) {
                         hasWyoPrepsPattern = true;
+                        break;
+                    }
+                    // Runnercard format: "Place.    Bib    Name    Year    Team    Time    Score"
+                    // Pattern: Place with period, bib (1-3 digits), name, year (Fr/So/Jr/Sr), team (starts with team place), time (MM:SS.S)
+                    // Example: "1.    58    River Shaw    Jr    1.    Grand County HS    16:52.9    1"
+                    // Key: Place ends with period, team field starts with number followed by period
+                    if (resultLines[i].match(/^1\.\s+\d{1,3}\s+\w+\s+\w+\s+(Fr|So|Jr|Sr)\s+\d+\.\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d/i)) {
+                        hasRunnercardPattern = true;
                         break;
                     }
                     // Athlete Guild format: "Name    Bib    Team    Rank    Chip Time    Pace"
@@ -923,6 +932,14 @@ Akey
                     // Process WyoPreps format
                     for (let i = 0; i < resultLines.length; i++) {
                         let result = parseWyoPrepsFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                } else if (hasRunnercardPattern) {
+                    // Process Runnercard format
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseRunnercardFormat(resultLines[i]);
                         if (result) {
                             extractedResults.push(result);
                         }
@@ -1327,6 +1344,75 @@ Akey
                 grade: year,
                 points: '',
                 pace: pace
+            };
+        }
+
+        function parseRunnercardFormat(line) {
+            // Format: "Place.    Bib    Name    Year    Team    Time    Score"
+            // Example: "1.    58    River Shaw    Jr    1.    Grand County HS    16:52.9    1"
+            // Example: "27.    93    Noah Begay    Sr    8.    San Juan HS    18:58.8        " (no score - non-scoring)
+            // Pattern: Tab or multi-space separated
+            // Place ends with period, Team starts with team place number followed by period
+
+            const trimmed = line.trim();
+
+            // Parse from right to left for reliability
+            // Score at end (optional - may be blank for non-scoring runners)
+            let score = '';
+            let remaining = trimmed;
+
+            // Check if line ends with a score (1-2 digit number or blank spaces)
+            const scoreMatch = trimmed.match(/\s+(\d{1,2})\s*$/);
+            if (scoreMatch) {
+                score = scoreMatch[1];
+                remaining = trimmed.substring(0, trimmed.length - scoreMatch[0].length);
+            }
+
+            // Time before score: "16:52.9" (MM:SS.S format)
+            const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d)\s*$/);
+            if (!timeMatch) return null;
+            const time = timeMatch[1];
+            remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
+
+            // Team before time: starts with team place number and period "1.    Grand County HS"
+            // Match: number, period, then team name (multi-word)
+            const teamMatch = remaining.match(/\s+(\d+)\.\s+([\w\s]+?)\s*$/);
+            if (!teamMatch) return null;
+            const team = teamMatch[2].trim();
+            remaining = remaining.substring(0, remaining.length - teamMatch[0].length);
+
+            // Year/Grade before team: "Fr", "So", "Jr", "Sr"
+            const yearMatch = remaining.match(/\s+(Fr|So|Jr|Sr)\s*$/i);
+            if (!yearMatch) return null;
+            const year = yearMatch[1];
+            remaining = remaining.substring(0, remaining.length - yearMatch[0].length);
+
+            // Now from left: Place (with period), Bib, Name (2 words)
+            const parts = remaining.trim().split(/\s+/);
+            if (parts.length < 4) return null; // Need Place., Bib, FirstName, LastName
+
+            // Place (ends with period)
+            const placeStr = parts[0];
+            if (!placeStr.match(/^\d+\.$/)) return null;
+            const place = placeStr.replace('.', '');
+
+            // Bib (1-3 digits)
+            const bib = parts[1];
+            if (!bib.match(/^\d{1,3}$/)) return null;
+
+            // Name (remaining words before year)
+            const name = parts.slice(2).join(' ');
+            if (!name || name.length === 0) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: year,
+                points: score,
+                pace: ''
             };
         }
 
