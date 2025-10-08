@@ -593,8 +593,10 @@ Akey
                         startIndex = i;
                         break;
                     }
-                    // Athlete Guild: "Name    Bib    Team    Rank    Time..."
-                    if (line.match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{2,4}(\t|\s{2,})[A-Z]/i)) {
+                    // Athlete Guild Format 1: "Name    Bib    Team    Rank    Time..."
+                    // Athlete Guild Format 2: "Name    Bib    Place    Time    Pace    Team"
+                    // Check for name pattern followed by bib number
+                    if (line.match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,4}(\t|\s{2,})/i)) {
                         startIndex = i;
                         break;
                     }
@@ -951,8 +953,29 @@ Akey
                     }
                 } else if (hasAthleteGuildPattern) {
                     // Process Athlete Guild format
+                    // Look for race headers like "Varsity Girls - Overall", "JV Boys - Overall"
                     for (let i = 0; i < resultLines.length; i++) {
-                        let result = parseAthleteGuildFormat(resultLines[i]);
+                        const line = resultLines[i].trim();
+
+                        // Check for race header pattern
+                        // Pattern: "Varsity Girls - Overall", "JV Boys - Overall", "7th Grade Girls - Overall"
+                        if (line.match(/^(Varsity|JV|7th Grade|8th Grade)\s+(Boys?|Girls?)\s+-\s+Overall$/i)) {
+                            extractedResults.push({
+                                isHeader: true,
+                                headerText: line.toUpperCase(),
+                                place: '',
+                                bib: '',
+                                name: '',
+                                team: '',
+                                time: '',
+                                grade: '',
+                                points: '',
+                                pace: ''
+                            });
+                            continue;
+                        }
+
+                        let result = parseAthleteGuildFormat(line);
                         if (result) {
                             extractedResults.push(result);
                         }
@@ -1956,8 +1979,10 @@ Akey
         }
 
         function parseAthleteGuildFormat(line) {
-            // Format: "Name    Bib    Team    Rank    Chip Time    Pace"
+            // Format 1: "Name    Bib    Team    Rank    Chip Time    Pace"
             // Example: "Macee Rhodes    292    Utopia    1    14:24.429    11:35"
+            // Format 2: "Name    Bib    Place    Time    Pace    Team"
+            // Example: "Ella Morrison    114    1    12:42.950    6:21    Florence"
 
             // Split by tabs or multiple spaces (2+)
             const parts = line.trim().split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
@@ -1975,24 +2000,53 @@ Akey
 
             // Bib number
             const bib = parts[partIndex];
-            if (!bib.match(/^\d{2,4}$/)) return null;
+            if (!bib.match(/^\d{1,4}$/)) return null;
             partIndex++;
 
-            // Team
-            const team = parts[partIndex];
-            if (!team || team.length === 0) return null;
-            partIndex++;
+            // Detect format by checking if next field is a number (place) or text (team)
+            let place, team, time, pace;
 
-            // Rank (place)
-            const place = parts[partIndex];
-            if (!place.match(/^\d+$/)) return null;
-            partIndex++;
+            if (parts[partIndex].match(/^\d+$/)) {
+                // Format 2: Name, Bib, Place, Time, Pace, Team
+                place = parts[partIndex];
+                partIndex++;
 
-            // Chip Time
-            let time = parts[partIndex];
-            if (!time || !time.match(/\d+:\d+/)) return null;
+                // Time
+                time = parts[partIndex];
+                if (!time || !time.match(/\d+:\d+/)) return null;
+                partIndex++;
 
-            // Round to 2 decimal places if it has more
+                // Pace (optional)
+                if (partIndex < parts.length && parts[partIndex].match(/^\d+:\d+$/)) {
+                    pace = parts[partIndex];
+                    partIndex++;
+                }
+
+                // Team (rest of the parts)
+                team = parts.slice(partIndex).join(' ');
+            } else {
+                // Format 1: Name, Bib, Team, Rank, Time, Pace
+                team = parts[partIndex];
+                if (!team || team.length === 0) return null;
+                partIndex++;
+
+                // Rank (place)
+                place = parts[partIndex];
+                if (!place.match(/^\d+$/)) return null;
+                partIndex++;
+
+                // Chip Time
+                time = parts[partIndex];
+                if (!time || !time.match(/\d+:\d+/)) return null;
+                partIndex++;
+
+                // Pace (optional)
+                if (partIndex < parts.length && parts[partIndex].match(/^\d+:\d+$/)) {
+                    pace = parts[partIndex];
+                }
+            }
+
+            // Round time to 2 decimal places if it has more
             const timeMatch = time.match(/^(\d+:\d+)\.(\d+)$/);
             if (timeMatch && timeMatch[2].length > 2) {
                 const decimal = timeMatch[2].substring(0, 2);
@@ -2007,7 +2061,7 @@ Akey
                 time: time,
                 grade: '',
                 points: '',
-                pace: ''
+                pace: pace || ''
             };
         }
 
