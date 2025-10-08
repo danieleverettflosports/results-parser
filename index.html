@@ -636,7 +636,17 @@ Akey
                     document.getElementById('status').textContent = 'Error';
                     return;
                 }
-                
+
+                // Look backwards from startIndex to find any race headers
+                // Check up to 10 lines before for headers like "Varsity Girls - Overall"
+                let headerCheckStart = Math.max(0, startIndex - 10);
+                for (let i = startIndex - 1; i >= headerCheckStart; i--) {
+                    if (lines[i].match(/^(Varsity|JV|7th Grade|8th Grade)\s+(Boys?|Girls?)\s+-\s+Overall$/i)) {
+                        startIndex = i;
+                        break;
+                    }
+                }
+
                 const resultLines = lines.slice(startIndex);
                 
                 // Try to detect format
