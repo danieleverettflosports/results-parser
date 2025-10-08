@@ -742,7 +742,9 @@ Akey
                         break;
                     }
                     // Athlete Guild format: "Name    Bib    Team    Rank    Chip Time    Pace"
-                    if (resultLines[i].match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{2,4}(\t|\s{2,})[A-Z]/i)) {
+                    // Or: "Name    Bib    Place    Time    Pace    Team"
+                    // Pattern: Name (two words), Bib (1-4 digits), then either team name or place number
+                    if (resultLines[i].match(/^[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,4}(\t|\s{2,})/i)) {
                         hasAthleteGuildPattern = true;
                         break;
                     }
