@@ -2177,14 +2177,15 @@ Akey
 
             // Check for optional points field after time
             // Points field exists in some MileSplit formats but not in live results
-            // If the line after time is a number followed by something that's NOT "Logo", it might be points
-            // But if it's followed by "Logo", it's the next place number, so don't consume it
+            // If the line after time is a number, check what follows it:
+            // - If followed by "Logo" or a name (letters), it's the next place number, not points
+            // - Only treat as points if followed by something else (like a number or end of file)
             if (i < lines.length) {
                 const nextLine = lines[i].trim();
                 if ((nextLine.match(/^\d+$/) || nextLine === '--') && i + 1 < lines.length) {
                     const lookAhead = i + 1 < lines.length ? lines[i + 1].trim() : '';
-                    // Only treat this as points if it's NOT followed by Logo (which indicates next entry)
-                    if (!lookAhead.match(/^Logo$/i) && !lookAhead.match(/^\d+$/)) {
+                    // Don't treat as points if followed by Logo, a name, or another number
+                    if (!lookAhead.match(/^Logo$/i) && !lookAhead.match(/^[A-Za-z]/)) {
                         result.points = nextLine;
                         i++;
                     }
