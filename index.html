@@ -638,10 +638,16 @@ Akey
                 }
 
                 // Look backwards from startIndex to find any race headers
-                // Check up to 10 lines before for headers like "Varsity Girls - Overall"
+                // Check up to 10 lines before for headers like "Varsity Girls - Overall" or "All Events"
                 let headerCheckStart = Math.max(0, startIndex - 10);
                 for (let i = startIndex - 1; i >= headerCheckStart; i--) {
+                    // Athlete Guild format
                     if (lines[i].match(/^(Varsity|JV|7th Grade|8th Grade)\s+(Boys?|Girls?)\s+-\s+Overall$/i)) {
+                        startIndex = i;
+                        break;
+                    }
+                    // MileSplit format: look for "All Events" which precedes the event header
+                    if (lines[i].match(/^All Events$/i)) {
                         startIndex = i;
                         break;
                     }
@@ -1036,6 +1042,54 @@ Akey
                     // Process MileSplit format
                     let i = 0;
                     while (i < resultLines.length) {
+                        const line = resultLines[i].trim();
+
+                        // Check for event header patterns flanked by "All Events" and "Completed"
+                        // Pattern: "All Events" -> event name -> "Completed"
+                        if (line.match(/^All Events$/i) && i + 2 < resultLines.length) {
+                            const potentialHeader = resultLines[i + 1].trim();
+                            const afterHeader = resultLines[i + 2].trim();
+
+                            // If the line after potential header is "Completed", we found a header
+                            if (afterHeader.match(/^Completed$/i) && potentialHeader.length > 0) {
+                                extractedResults.push({
+                                    isHeader: true,
+                                    headerText: potentialHeader.toUpperCase(),
+                                    place: '',
+                                    bib: '',
+                                    name: '',
+                                    team: '',
+                                    time: '',
+                                    grade: '',
+                                    points: '',
+                                    pace: ''
+                                });
+                                i += 3; // Skip "All Events", header, and "Completed"
+                                continue;
+                            }
+                        }
+
+                        // Also check for standalone event header patterns as fallback
+                        // Matches formats like: "HS Girls 5k", "Varsity Boys 3200m", "JV Girls 2 Mile", "MS Boys 4k"
+                        if (line.match(/^(HS|MS|Varsity|JV|Freshman|Sophomore|Junior|Senior)\s+(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)/i) ||
+                            // Also match simpler patterns like "Girls 5k", "Boys 3200m"
+                            line.match(/^(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)/i)) {
+                            extractedResults.push({
+                                isHeader: true,
+                                headerText: line.toUpperCase(),
+                                place: '',
+                                bib: '',
+                                name: '',
+                                team: '',
+                                time: '',
+                                grade: '',
+                                points: '',
+                                pace: ''
+                            });
+                            i++;
+                            continue;
+                        }
+
                         if (resultLines[i].match(/^(\d+|--)$/)) {
                             let result = parseMileSplitFormat(resultLines, i);
                             if (result) {
