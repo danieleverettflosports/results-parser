@@ -642,6 +642,12 @@ Akey
                 // Need more lines for MeetPro since there's often team scoring summary before Individual Results
                 let headerCheckStart = Math.max(0, startIndex - 50);
                 for (let i = startIndex - 1; i >= headerCheckStart; i--) {
+                    // MyRaceResult format: look for race name like "Boys Elite", "Girls Varsity", etc.
+                    // These appear right before the column headers
+                    if (lines[i].match(/^(Boys?|Girls?|Men|Women)\s+(Elite|Varsity|JV|Freshman|Sophomore|Junior|Senior)/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Athlete Guild format
                     if (lines[i].match(/^(Varsity|JV|7th Grade|8th Grade)\s+(Boys?|Girls?)\s+-\s+Overall$/i)) {
                         startIndex = i;
@@ -680,8 +686,17 @@ Akey
                 let hasRaceDayPattern = false;
                 let hasTiffinPattern = false;
                 let hasMeetProPattern = false;
+                let hasMyRaceResultPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // MyRaceResult format detection
+                    // Pattern: Place, Points, Name, Team, Bib, Pace, Time (tab or multi-space separated)
+                    // Key identifier: "Points" column between Place and Name
+                    // Example: "1    1    Marcelo MANTECON    Belen Jesuit Prep    5086    4:41    14:33"
+                    if (resultLines[i].match(/^1(\t|\s{2,})\d+(\t|\s{2,})[A-Z][a-z]+\s+[A-Z]+(\t|\s{2,})[\w\s]+(\t|\s{2,})\d{3,5}(\t|\s{2,})\d{1,2}:\d{2}(\t|\s{2,})\d{1,2}:\d{2}/)) {
+                        hasMyRaceResultPattern = true;
+                        break;
+                    }
                     // MeetPro format detection: Look for "Race #X" followed by race name and "Final Results"
                     // This pattern appears at the start of every MeetPro race section
                     if (resultLines[i].match(/^Race\s+#\d+/i)) {
@@ -818,7 +833,60 @@ Akey
                     }
                 }
 
-                if (hasMeetProPattern) {
+                if (hasMyRaceResultPattern) {
+                    // Process MyRaceResult format
+                    // Look for race headers like "Boys Elite" or "Girls Varsity"
+                    let lastHeaderCandidate = null;
+                    let raceDistance = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for race headers (e.g., "Boys Elite", "Girls Varsity")
+                        // Pattern: contains "boys" or "girls" and is a short line without data structure
+                        if (line &&
+                            line.match(/(?:boys|girls|men|women|elite|varsity|jv)/i) &&
+                            !line.includes('\t') &&
+                            !line.match(/^\d+\s/) &&
+                            !line.match(/^(Place|Points|Name|Team|Bib|Pace|Time|Number of records)/i) &&
+                            line.length < 50) {
+                            // Store as candidate, add it before first result
+                            lastHeaderCandidate = line;
+                            raceDistance = null; // Reset distance for new race
+                        } else {
+                            let result = parseMyRaceResultFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    // Calculate race distance from first result if we have pace
+                                    if (!raceDistance && result.pace && result.time) {
+                                        raceDistance = calculateRaceDistance(result.pace, result.time);
+                                    }
+
+                                    let headerText = lastHeaderCandidate.toUpperCase();
+                                    if (raceDistance) {
+                                        headerText += ` ${raceDistance}`;
+                                    }
+
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: headerText,
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                } else if (hasMeetProPattern) {
                     // Process MeetPro format
                     let lastHeaderCandidate = null;
                     let justSawRaceNumber = false;
@@ -2078,6 +2146,105 @@ Akey
             };
         }
 
+        function calculateRaceDistance(pace, time) {
+            // Parse pace (M:SS per mile or per km)
+            const paceMatch = pace.match(/^(\d{1,2}):(\d{2})$/);
+            if (!paceMatch) {
+                return null;
+            }
+            const paceMinutes = parseInt(paceMatch[1]);
+            const paceSeconds = parseInt(paceMatch[2]);
+            const paceInSeconds = paceMinutes * 60 + paceSeconds;
+
+            // Parse time (MM:SS)
+            const timeMatch = time.match(/^(\d{1,2}):(\d{2})$/);
+            if (!timeMatch) {
+                return null;
+            }
+            const timeMinutes = parseInt(timeMatch[1]);
+            const timeSeconds = parseInt(timeMatch[2]);
+            const timeInSeconds = timeMinutes * 60 + timeSeconds;
+
+            // Calculate distance in miles
+            const distanceInMiles = timeInSeconds / paceInSeconds;
+
+            // Check if it's close to 5K (3.10686 miles)
+            const fiveKMiles = 3.10686;
+            const threeMiles = 3.0;
+
+            // Allow 3% tolerance for better matching
+            const tolerance = 0.03;
+
+            if (Math.abs(distanceInMiles - fiveKMiles) / fiveKMiles <= tolerance) {
+                return '5km run';
+            } else if (Math.abs(distanceInMiles - threeMiles) / threeMiles <= tolerance) {
+                return '3 mile run';
+            }
+
+            return null;
+        }
+
+        function parseMyRaceResultFormat(line) {
+            // Format: Place, Points, Name, Team, Bib, Pace, Time (tab or multi-space separated)
+            // Example: "1    1    Marcelo MANTECON    Belen Jesuit Prep    5086    4:41    14:33"
+            // Some entries have "--" for points (non-scoring runners)
+            // Example: "13    --    Michael GIRARD    Viera    6490    4:58    15:26"
+
+            const trimmed = line.trim();
+
+            // Skip header lines and non-data lines
+            if (!trimmed ||
+                trimmed.match(/^(Place|Points|Name|Team|Bib|Pace|Time|Number of records)/i) ||
+                trimmed.match(/^-+$/)) {
+                return null;
+            }
+
+            // Split by tabs or multiple spaces
+            const parts = trimmed.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            if (parts.length < 7) return null;
+
+            // Place - first column
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Points - second column (can be a number, "(number)" for non-varsity, or "--")
+            const points = parts[1];
+            // Validate it looks like points (number, parentheses, or dashes)
+            if (!points.match(/^(\d+|\(\d+\)|--)$/)) return null;
+
+            // Name - third column (format: "FirstName LASTNAME" or "FirstName MiddleName LASTNAME")
+            const name = parts[2];
+            if (!name || name.length === 0) return null;
+
+            // Team - fourth column
+            const team = parts[3];
+            if (!team || team.length === 0) return null;
+
+            // Bib - fifth column
+            const bib = parts[4];
+            if (!bib || !bib.match(/^\d{1,5}$/)) return null;
+
+            // Pace - sixth column (format: M:SS)
+            const pace = parts[5];
+            if (!pace || !pace.match(/^\d{1,2}:\d{2}$/)) return null;
+
+            // Time - seventh column (format: MM:SS)
+            const time = parts[6];
+            if (!time || !time.match(/^\d{1,2}:\d{2}$/)) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: points.match(/^\d+$/) ? points : '', // Only include numeric points
+                pace: pace
+            };
+        }
+
         function parseAthleteGuildFormat(line) {
             // Format 1: "Name    Bib    Team    Rank    Chip Time    Pace"
             // Example: "Macee Rhodes    292    Utopia    1    14:24.429    11:35"
@@ -2544,6 +2711,9 @@ Akey
 
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
+
+            // Check for MyRaceResult format: Place, Points, Name, Team, Bib, Pace, Time
+            if (text.match(/^1(\t|\s{2,})\d+(\t|\s{2,})[A-Z][a-z]+\s+[A-Z]+(\t|\s{2,})[\w\s]+(\t|\s{2,})\d{3,5}(\t|\s{2,})\d{1,2}:\d{2}(\t|\s{2,})\d{1,2}:\d{2}/m)) return 'MyRaceResult';
 
             // Check for MeetPro first (has "Race #X" pattern)
             if (text.match(/Race\s+#\d+/i)) return 'MeetPro';
