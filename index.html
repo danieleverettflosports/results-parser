@@ -642,6 +642,12 @@ Akey
                 // Need more lines for MeetPro since there's often team scoring summary before Individual Results
                 let headerCheckStart = Math.max(0, startIndex - 50);
                 for (let i = startIndex - 1; i >= headerCheckStart; i--) {
+                    // Race Roster format: look for headers with "Individuals"
+                    // Pattern: "Varsity Boys 5K - Individuals"
+                    if (lines[i].match(/individuals/i) && lines[i].match(/(?:varsity|jv|boys?|girls?|men|women)/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // MyRaceResult format: look for race name like "Boys Elite", "Girls Varsity", etc.
                     // These appear right before the column headers
                     if (lines[i].match(/^(Boys?|Girls?|Men|Women)\s+(Elite|Varsity|JV|Freshman|Sophomore|Junior|Senior)/i)) {
@@ -687,8 +693,17 @@ Akey
                 let hasTiffinPattern = false;
                 let hasMeetProPattern = false;
                 let hasMyRaceResultPattern = false;
+                let hasRaceRosterPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // Race Roster format detection
+                    // Pattern: Bib, Name, Overall Place, Team Name, Class, Team Place, Scoring Place, Pace, Time
+                    // Key identifier: Has "Individuals" in header and bib at start of line
+                    // Example: "537    Banner Barnes    1    NOBLESVILLE    JR    1    1    4:52    15:03.7"
+                    if (resultLines[i].match(/^\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d+(\t|\s{2,})[A-Z\s]+(\t|\s{2,})(FR|SO|JR|SR)(\t|\s{2,})\d+(\t|\s{2,})\d+(\t|\s{2,})\d{1,2}:\d{2}(\t|\s{2,})\d{1,2}:\d{2}\.\d/)) {
+                        hasRaceRosterPattern = true;
+                        break;
+                    }
                     // MyRaceResult format detection
                     // Pattern: Place, Points, Name, Team, Bib, Pace, Time (tab or multi-space separated)
                     // Key identifier: "Points" column between Place and Name
@@ -833,7 +848,49 @@ Akey
                     }
                 }
 
-                if (hasMyRaceResultPattern) {
+                if (hasRaceRosterPattern) {
+                    // Process Race Roster format
+                    // Look for race headers like "Varsity Boys 5K - Individuals"
+                    let lastHeaderCandidate = null;
+                    let raceDistance = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for race headers with "Individuals" keyword
+                        // Pattern: "Varsity Boys 5K - Individuals" or similar
+                        if (line &&
+                            line.match(/individuals/i) &&
+                            line.match(/(?:varsity|jv|boys?|girls?|men|women)/i) &&
+                            line.length < 100) {
+                            // Store as candidate, add it before first result
+                            // Replace "5K" with "5km run"
+                            lastHeaderCandidate = line.replace(/\b5K\b/gi, '5km run');
+                            raceDistance = null; // Already in header
+                        } else {
+                            let result = parseRaceRosterFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate.toUpperCase(),
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                } else if (hasMyRaceResultPattern) {
                     // Process MyRaceResult format
                     // Look for race headers like "Boys Elite" or "Girls Varsity"
                     let lastHeaderCandidate = null;
@@ -2146,6 +2203,71 @@ Akey
             };
         }
 
+        function parseRaceRosterFormat(line) {
+            // Format: Bib, Name, Overall Place, Team Name, Class, Team Place, Scoring Place, Pace, Time, [optional split fields]
+            // Example: "537    Banner Barnes    1    NOBLESVILLE    JR    1    1    4:52    15:03.7    07:35.0    4:54    2    07:28.7    4:50    1"
+            // Example with no team place: "538    Cohen Baumer    46    NOBLESVILLE    FR    9        5:27    16:51.8    08:21.2    5:24    53    08:30.7    5:30    40"
+
+            const trimmed = line.trim();
+
+            // Skip header lines and non-data lines
+            if (!trimmed ||
+                trimmed.match(/^(Bib|Name|Overall|Team|Class|Place|Scoring|Pace|Time|First|Second|Half|Filters|Search)/i) ||
+                trimmed.match(/^-+$/)) {
+                return null;
+            }
+
+            // Split by tabs or multiple spaces
+            const parts = trimmed.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            if (parts.length < 9) return null;
+
+            // Bib - first column
+            const bib = parts[0];
+            if (!bib.match(/^\d{1,4}$/)) return null;
+
+            // Name - second column (format: "FirstName LastName")
+            const name = parts[1];
+            if (!name || name.length === 0) return null;
+
+            // Overall Place - third column
+            const place = parts[2];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Team Name - fourth column
+            const team = parts[3];
+            if (!team || team.length === 0) return null;
+
+            // Class - fifth column (FR, SO, JR, SR)
+            const grade = parts[4];
+            if (!grade.match(/^(FR|SO|JR|SR)$/i)) return null;
+
+            // Team Place - sixth column (can be number or empty)
+            const teamPlace = parts[5];
+
+            // Scoring Place - seventh column (can be number or empty)
+            let scoringPlace = parts[6];
+
+            // Pace - eighth column (format: M:SS)
+            const pace = parts[7];
+            if (!pace || !pace.match(/^\d{1,2}:\d{2}$/)) return null;
+
+            // Time - ninth column (format: MM:SS.S)
+            const time = parts[8];
+            if (!time || !time.match(/^\d{1,2}:\d{2}\.\d$/)) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: grade.toUpperCase(),
+                points: scoringPlace && scoringPlace.match(/^\d+$/) ? scoringPlace : '',
+                pace: pace
+            };
+        }
+
         function calculateRaceDistance(pace, time) {
             // Parse pace (M:SS per mile or per km)
             const paceMatch = pace.match(/^(\d{1,2}):(\d{2})$/);
@@ -2711,6 +2833,9 @@ Akey
 
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
+
+            // Check for Race Roster format: Has "Individuals" and bib at start
+            if (lowerText.includes('individuals') && text.match(/^\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d+(\t|\s{2,})[A-Z\s]+(\t|\s{2,})(FR|SO|JR|SR)/m)) return 'Race Roster';
 
             // Check for MyRaceResult format: Place, Points, Name, Team, Bib, Pace, Time
             if (text.match(/^1(\t|\s{2,})\d+(\t|\s{2,})[A-Z][a-z]+\s+[A-Z]+(\t|\s{2,})[\w\s]+(\t|\s{2,})\d{3,5}(\t|\s{2,})\d{1,2}:\d{2}(\t|\s{2,})\d{1,2}:\d{2}/m)) return 'MyRaceResult';
