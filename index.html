@@ -760,11 +760,18 @@ Akey
 
                 console.log('Found start index:', startIndex, 'Line:', lines[startIndex]);
 
-                // Look backwards from startIndex to find any race headers
+                // Check if this is RunSignup format (don't look backwards for headers in this case)
+                const isRunSignupStart = lines[startIndex].match(/^\d+(\t|\s+)\d{3,4}$/) &&
+                    startIndex + 3 < lines.length &&
+                    lines[startIndex + 1].match(/^[A-Z]$/) &&
+                    lines[startIndex + 2].match(/^[A-Z][a-z]+$/);
+
+                // Look backwards from startIndex to find any race headers (skip for RunSignup)
                 // Check up to 50 lines before for headers like "Varsity Girls - Overall" or "All Events" or "Race #X"
                 // Need more lines for MeetPro since there's often team scoring summary before Individual Results
-                let headerCheckStart = Math.max(0, startIndex - 50);
-                for (let i = startIndex - 1; i >= headerCheckStart; i--) {
+                if (!isRunSignupStart) {
+                    let headerCheckStart = Math.max(0, startIndex - 50);
+                    for (let i = startIndex - 1; i >= headerCheckStart; i--) {
                     // Competitive Timing format: look for headers with "Team Finish List"
                     // Pattern: "Varsity Girls Team Finish List-General"
                     if (lines[i].match(/team\s+finish\s+list/i) && lines[i].match(/(?:varsity|jv|boys?|girls?|men|women)/i)) {
@@ -797,6 +804,7 @@ Akey
                     if (lines[i].match(/^Race\s+#\d+/i)) {
                         startIndex = i;
                         break;
+                    }
                     }
                 }
 
