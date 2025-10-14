@@ -1032,7 +1032,7 @@ Akey
                             // Add column header row
                             extractedResults.push({
                                 isHeader: true,
-                                headerText: 'PLACE          TEAM                    POINTS',
+                                headerText: 'PLACE\tTEAM\tPOINTS',
                                 place: '',
                                 bib: '',
                                 name: '',
@@ -3227,20 +3227,28 @@ Akey
                 showToast('No results to copy');
                 return;
             }
-            
+
             const delimiter = document.getElementById('delimiter').value === 'csv' ? ',' :
                             document.getElementById('delimiter').value === 'pipe' ? '|' : '\t';
 
-            const header = ['Place', 'Bib', 'Name', 'Grade', 'Team', 'Time'].join(delimiter);
+            // Check if this is team scores data (no bib/name/grade in first data row)
+            const firstDataRow = extractedResults.find(r => !r.isHeader);
+            const isTeamScores = firstDataRow && !firstDataRow.bib && !firstDataRow.name && !firstDataRow.grade;
+
             const rows = extractedResults.map(r => {
-                // If it's a header row, output the header text across all columns
+                // If it's a header row, output the header text as-is (may have tabs embedded)
                 if (r.isHeader) {
                     return r.headerText;
+                }
+                // For team scores (no bib, name, or grade), output only place, team, and points
+                if (!r.bib && !r.name && !r.grade && r.place && r.team && r.time) {
+                    return [r.place, r.team, r.time].join('\t');
                 }
                 return [r.place, r.bib, r.name, r.grade, r.team, r.time].join(delimiter);
             });
 
-            const output = [header, ...rows].join('\n');
+            // Only add generic header if it's NOT team scores (team scores have their own header)
+            const output = isTeamScores ? rows.join('\n') : [['Place', 'Bib', 'Name', 'Grade', 'Team', 'Time'].join(delimiter), ...rows].join('\n');
             
             copyToClipboard(output);
             showToast('Copied to clipboard!');
@@ -3251,19 +3259,27 @@ Akey
                 showToast('No results to copy');
                 return;
             }
-            
+
             const delimiter = '\t';
 
-            const header = ['Place', 'Bib', 'Name', 'Grade', 'Team', 'Time'].join(delimiter);
+            // Check if this is team scores data (no bib/name/grade in first data row)
+            const firstDataRow = extractedResults.find(r => !r.isHeader);
+            const isTeamScores = firstDataRow && !firstDataRow.bib && !firstDataRow.name && !firstDataRow.grade;
+
             const rows = extractedResults.map(r => {
-                // If it's a header row, output the header text across all columns
+                // If it's a header row, output the header text as-is (may have tabs embedded)
                 if (r.isHeader) {
                     return r.headerText;
+                }
+                // For team scores (no bib, name, or grade), output only place, team, and points
+                if (!r.bib && !r.name && !r.grade && r.place && r.team && r.time) {
+                    return [r.place, r.team, r.time].join('\t');
                 }
                 return [r.place, r.bib, r.name, r.grade, r.team, r.time].join(delimiter);
             });
 
-            const output = [header, ...rows].join('\n');
+            // Only add generic header if it's NOT team scores (team scores have their own header)
+            const output = isTeamScores ? rows.join('\n') : [['Place', 'Bib', 'Name', 'Grade', 'Team', 'Time'].join(delimiter), ...rows].join('\n');
             
             copyToClipboard(output);
             showToast('Table copied to clipboard!');
