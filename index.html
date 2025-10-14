@@ -707,6 +707,17 @@ Akey
                         startIndex = i;
                         break;
                     }
+                    // RunSignup format: "1    580" (place + bib), followed by initial on next line
+                    // Check if this line is "1" + bib number, and next few lines have the name pattern
+                    if (line.match(/^1(\t|\s+)\d{3,4}$/) && i + 3 < lines.length) {
+                        // Verify the pattern: initial, first name, last name
+                        if (lines[i + 1].match(/^[A-Z]$/) &&
+                            lines[i + 2].match(/^[A-Z][a-z]+$/) &&
+                            lines[i + 3].match(/^[A-Z][a-z]+$/)) {
+                            startIndex = i;
+                            break;
+                        }
+                    }
                     // KarmaRush format: line starting with "1" followed by name (not just "1" alone)
                     // Format: "1    Robert Mechura" or "1\tRobert Mechura"
                     if (line.match(/^1(\t|\s+)\w/)) {
