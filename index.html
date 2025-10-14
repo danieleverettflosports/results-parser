@@ -2228,7 +2228,7 @@ Akey
             // Split by tabs or multiple spaces
             const parts = trimmed.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
 
-            if (parts.length < 9) return null;
+            if (parts.length < 7) return null; // At minimum: Bib, Name, Place, Team, Grade, Pace, Time
 
             // Bib - first column
             const bib = parts[0];
@@ -2250,19 +2250,23 @@ Akey
             const grade = parts[4];
             if (!grade.match(/^(FR|SO|JR|SR)$/i)) return null;
 
-            // Team Place - sixth column (can be number or empty)
-            const teamPlace = parts[5];
+            // Now we need to find Pace and Time by scanning from the end
+            // Time is always last (MM:SS.S format)
+            const time = parts[parts.length - 1];
+            if (!time || !time.match(/^\d{1,2}:\d{2}\.\d$/)) return null;
 
-            // Scoring Place - seventh column (can be number or empty)
-            let scoringPlace = parts[6];
-
-            // Pace - eighth column (format: M:SS)
-            const pace = parts[7];
+            // Pace is second to last (M:SS format)
+            const pace = parts[parts.length - 2];
             if (!pace || !pace.match(/^\d{1,2}:\d{2}$/)) return null;
 
-            // Time - ninth column (format: MM:SS.S)
-            const time = parts[8];
-            if (!time || !time.match(/^\d{1,2}:\d{2}\.\d$/)) return null;
+            // Scoring Place is the field before Pace (if it exists and is a number)
+            let scoringPlace = '';
+            if (parts.length >= 8) {
+                const possibleScoringPlace = parts[parts.length - 3];
+                if (possibleScoringPlace && possibleScoringPlace.match(/^\d+$/)) {
+                    scoringPlace = possibleScoringPlace;
+                }
+            }
 
             return {
                 place: place,
@@ -2271,7 +2275,7 @@ Akey
                 team: team,
                 time: time,
                 grade: grade.toUpperCase(),
-                points: scoringPlace && scoringPlace.match(/^\d+$/) ? scoringPlace : '',
+                points: scoringPlace,
                 pace: pace
             };
         }
