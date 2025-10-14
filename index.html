@@ -519,7 +519,8 @@ Akey
                         lines[i].match(/^Top$/i) ||
                         lines[i].match(/Place\s+Bib\s+Name/i) ||
                         lines[i].match(/Individual Results/i) ||
-                        lines[i].match(/Place\s+Name\s+Grade\s+Team\s+Time/i)) {
+                        lines[i].match(/Place\s+Name\s+Grade\s+Team\s+Time/i) ||
+                        lines[i].match(/Team Scores$/i)) {
                         individualsIndex = i;
                         break;
                     }
@@ -647,13 +648,23 @@ Akey
                 }
 
                 if (startIndex === -1) {
-                    console.log('Failed to find start index. Showing first 20 lines:');
-                    for (let i = 0; i < Math.min(20, lines.length); i++) {
-                        console.log(`Line ${i}:`, lines[i]);
+                    // For team scores format, we don't need a traditional start index
+                    // Check if this might be team scores data
+                    const hasTeamScoresHeader = lines.some(line => line.match(/Team Scores$/i));
+                    const hasSplitPattern = lines.some(line => line.match(/1-5 Split/i));
+
+                    if (hasTeamScoresHeader || hasSplitPattern) {
+                        console.log('Detected team scores format, setting startIndex to 0');
+                        startIndex = 0;
+                    } else {
+                        console.log('Failed to find start index. Showing first 20 lines:');
+                        for (let i = 0; i < Math.min(20, lines.length); i++) {
+                            console.log(`Line ${i}:`, lines[i]);
+                        }
+                        showError('Could not find the start of race results. Make sure you copied the results table.');
+                        document.getElementById('status').textContent = 'Error';
+                        return;
                     }
-                    showError('Could not find the start of race results. Make sure you copied the results table.');
-                    document.getElementById('status').textContent = 'Error';
-                    return;
                 }
 
                 console.log('Found start index:', startIndex, 'Line:', lines[startIndex]);
@@ -729,9 +740,12 @@ Akey
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
                     // Team Scores format (MileSplit team scores - not individual results)
                     // Look for "Team Scores" in header and "Place    Team    Points" structure
-                    if (resultLines[i].match(/Team Scores$/i) ||
-                        (resultLines[i].match(/^Place\s+Team\s+Points/i) &&
-                         resultLines.some(line => line.match(/^\d+\s+\+.*1-5 Split/)))) {
+                    if (resultLines[i].match(/Team Scores$/i)) {
+                        hasTeamScoresPattern = true;
+                        break;
+                    }
+                    // Also check for the scoring pattern with "1-5 Split"
+                    if (resultLines[i].match(/\d+\+\d+\+\d+.*1-5 Split/i)) {
                         hasTeamScoresPattern = true;
                         break;
                     }
