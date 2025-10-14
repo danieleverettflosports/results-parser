@@ -1293,9 +1293,11 @@ Akey
 
                             // If the line after potential header is "Completed", we found a header
                             if (afterHeader.match(/^Completed$/i) && potentialHeader.length > 0) {
+                                // Normalize header: convert "5k" to "5km"
+                                let normalizedHeader = potentialHeader.replace(/\b5k\b/gi, '5km');
                                 extractedResults.push({
                                     isHeader: true,
-                                    headerText: potentialHeader.toUpperCase(),
+                                    headerText: normalizedHeader.toUpperCase(),
                                     place: '',
                                     bib: '',
                                     name: '',
@@ -1315,9 +1317,11 @@ Akey
                         if (line.match(/^(HS|MS|Varsity|JV|Freshman|Sophomore|Junior|Senior)\s+(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)/i) ||
                             // Also match simpler patterns like "Girls 5k", "Boys 3200m"
                             line.match(/^(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)/i)) {
+                            // Normalize header: convert "5k" to "5km"
+                            let normalizedHeader = line.replace(/\b5k\b/gi, '5km');
                             extractedResults.push({
                                 isHeader: true,
-                                headerText: line.toUpperCase(),
+                                headerText: normalizedHeader.toUpperCase(),
                                 place: '',
                                 bib: '',
                                 name: '',
