@@ -1485,8 +1485,9 @@ Akey
                     // Process KarmaRush format
                     let i = 0;
                     while (i < resultLines.length) {
-                        // Match place number followed by tab or multiple spaces
-                        if (resultLines[i].match(/^\d+(\t|\s{2,})/)) {
+                        // Match place number followed by tab, multiple spaces, or single space + name
+                        // This handles both "1\tName" and "1 Name" and "1    Name"
+                        if (resultLines[i].match(/^\d+(\t|\s+\w)/)) {
                             let result = parseKarmaRushTabFormat(resultLines, i);
                             if (result) {
                                 extractedResults.push(result);
@@ -3088,16 +3089,48 @@ Akey
             };
 
             const firstLine = lines[i].trim();
-            // Split by tab or multiple spaces (2+)
-            const tabParts = firstLine.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
 
+            // Try splitting by tab first, then by any amount of spaces
+            let tabParts = firstLine.split('\t').map(p => p.trim()).filter(p => p);
+
+            // If no tab, try splitting by spaces (one or more)
             if (tabParts.length < 2) {
-                return null;
+                // For space-delimited, we need to be careful: "1 Robert Mechura" should split into ["1", "Robert Mechura"]
+                // Use a more careful approach: extract the first number, then take the rest as the name
+                const match = firstLine.match(/^(\d+)\s+(.+)$/);
+                if (match) {
+                    tabParts = [match[1], match[2]];
+                } else {
+                    tabParts = [];
+                }
             }
 
-            result.place = tabParts[0];
-            result.name = tabParts[1];
-            i++;
+            // Check if place and name are on same line or separate lines
+            if (tabParts.length >= 2) {
+                // Place and name on same line: "1\tRobert Mechura" or "1    Robert Mechura"
+                result.place = tabParts[0];
+                result.name = tabParts[1];
+                i++;
+            } else if (tabParts.length === 1 && tabParts[0].match(/^\d+$/)) {
+                // Place on its own line, name on next line
+                result.place = tabParts[0];
+                i++;
+                if (i < lines.length) {
+                    const nameLine = lines[i].trim();
+                    // Skip if next line is also just a number (could be points)
+                    if (!nameLine.match(/^\d+$/)) {
+                        result.name = nameLine;
+                        i++;
+                    } else {
+                        // If it's a number, this might not be the right pattern
+                        return null;
+                    }
+                } else {
+                    return null;
+                }
+            } else {
+                return null;
+            }
             
             if (i < lines.length) {
                 const schoolLine = lines[i].trim();
