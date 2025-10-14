@@ -737,18 +737,17 @@ Akey
                 let hasCompetitiveTimingPattern = false;
                 let hasTeamScoresPattern = false;
 
+                // Check for Team Scores format by looking at ALL lines (not just resultLines)
+                // because the header might be before the startIndex
+                const hasTeamScoresHeader = lines.some(line => line.match(/Team Scores$/i));
+                const hasSplitPattern = resultLines.some(line => line.match(/\d+\+\d+\+\d+.*1-5 Split/i));
+
+                if (hasTeamScoresHeader || hasSplitPattern) {
+                    console.log('Team Scores format detected via header or split pattern');
+                    hasTeamScoresPattern = true;
+                }
+
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
-                    // Team Scores format (MileSplit team scores - not individual results)
-                    // Look for "Team Scores" in header and "Place    Team    Points" structure
-                    if (resultLines[i].match(/Team Scores$/i)) {
-                        hasTeamScoresPattern = true;
-                        break;
-                    }
-                    // Also check for the scoring pattern with "1-5 Split"
-                    if (resultLines[i].match(/\d+\+\d+\+\d+.*1-5 Split/i)) {
-                        hasTeamScoresPattern = true;
-                        break;
-                    }
                     // Competitive Timing format detection
                     // Pattern: Place, Bib, Name, Year, Team Name, Score, Team Score, Team Place, Clock Time, Pace
                     // Key identifier: Has "Team Finish List" in header and score column with special values like "< 5", "> 7", "(number)"
@@ -1000,9 +999,10 @@ Akey
                 } else if (hasTeamScoresPattern) {
                     // Process Team Scores format (MileSplit team scores - not individual results)
                     // Format: Race name with "Team Scores", then Place/Team/Points/Scorers/Times data
+                    // Use full lines array, not resultLines, since header may be before startIndex
                     let i = 0;
-                    while (i < resultLines.length) {
-                        const line = resultLines[i].trim();
+                    while (i < lines.length) {
+                        const line = lines[i].trim();
 
                         // Check for team scores header line
                         // Pattern: "Girls 2 Mile Run Finals Team Scores"
@@ -1046,14 +1046,14 @@ Akey
                             i++;
 
                             // Skip column header lines (Place, Team, Points, Scorers, Times)
-                            while (i < resultLines.length &&
-                                   resultLines[i].trim().match(/^(Place|Team|Points?|Scorers?|Times?)/i)) {
+                            while (i < lines.length &&
+                                   lines[i].trim().match(/^(Place|Team|Points?|Scorers?|Times?)/i)) {
                                 i++;
                             }
 
                             // Parse team entries
-                            while (i < resultLines.length) {
-                                const teamLine = resultLines[i].trim();
+                            while (i < lines.length) {
+                                const teamLine = lines[i].trim();
 
                                 // Stop at empty line or next race
                                 if (!teamLine || teamLine.match(/Team Scores$/i)) {
@@ -1067,19 +1067,19 @@ Akey
 
                                     // Next line(s) contain team name (might be duplicated)
                                     let teamName = '';
-                                    if (i < resultLines.length) {
-                                        teamName = resultLines[i].trim();
+                                    if (i < lines.length) {
+                                        teamName = lines[i].trim();
                                         i++;
                                         // Skip duplicate team name if present
-                                        if (i < resultLines.length && resultLines[i].trim() === teamName) {
+                                        if (i < lines.length && lines[i].trim() === teamName) {
                                             i++;
                                         }
                                     }
 
                                     // Next line contains points and scoring info
                                     let points = '';
-                                    if (i < resultLines.length) {
-                                        const scoreLine = resultLines[i].trim();
+                                    if (i < lines.length) {
+                                        const scoreLine = lines[i].trim();
                                         const pointsMatch = scoreLine.match(/^(\d+)/);
                                         if (pointsMatch) {
                                             points = pointsMatch[1];
