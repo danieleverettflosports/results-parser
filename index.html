@@ -494,7 +494,7 @@ Akey
 
         function extractResults() {
             const input = document.getElementById('input').value;
-            
+
             if (!input.trim()) {
                 showError('Please paste race results into the input area');
                 return;
@@ -505,6 +505,7 @@ Akey
 
             try {
                 const lines = input.trim().split('\n').map(line => line.trim()).filter(line => line);
+                console.log('Total lines:', lines.length);
                 
                 // Skip header content - find where results actually start
                 // First, look for "Individuals" section or the all-results header (RunHigh format)
@@ -594,8 +595,9 @@ Akey
                         break;
                     }
                     // Competitive Timing format: "1    4244    Karee Cooley    11    Powell High School    1    41    2    18:34.88    6:00"
-                    // Place, Bib (3-5 digits), Name, Year, Team
-                    if (line.match(/^1(\t|\s{2,})\d{3,5}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,2}(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})/i)) {
+                    // Must have: Place=1, Bib (3-5 digits), Name, Year (9-12), Team, then time fields
+                    // Key distinguisher: bib number (3-5 digits) after place, and year field
+                    if (line.match(/^1(\t|\s{2,})\d{3,5}(\t|\s{2,})[A-Z][\w\s]+?(\t|\s{2,})(9|10|11|12)(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})\d+(\t|\s{2,})\d+(\t|\s{2,})\d+(\t|\s{2,})\d{1,2}:\d{2}\.\d{2}(\t|\s{2,})\d{1,2}:\d{2}\s*$/i)) {
                         startIndex = i;
                         break;
                     }
@@ -636,18 +638,25 @@ Akey
                         startIndex = i;
                         break;
                     }
-                    // KarmaRush/other formats: line starting with place number
-                    if (line.match(/^1(\t|$)/)) {
+                    // KarmaRush/other formats: line starting with just place "1"
+                    // Very restrictive to avoid false matches with team summaries
+                    if (line.match(/^1$/)) {
                         startIndex = i;
                         break;
                     }
                 }
 
                 if (startIndex === -1) {
+                    console.log('Failed to find start index. Showing first 20 lines:');
+                    for (let i = 0; i < Math.min(20, lines.length); i++) {
+                        console.log(`Line ${i}:`, lines[i]);
+                    }
                     showError('Could not find the start of race results. Make sure you copied the results table.');
                     document.getElementById('status').textContent = 'Error';
                     return;
                 }
+
+                console.log('Found start index:', startIndex, 'Line:', lines[startIndex]);
 
                 // Look backwards from startIndex to find any race headers
                 // Check up to 50 lines before for headers like "Varsity Girls - Overall" or "All Events" or "Race #X"
@@ -690,7 +699,9 @@ Akey
                 }
 
                 const resultLines = lines.slice(startIndex);
-                
+                console.log('Result lines count:', resultLines.length);
+                console.log('First 10 result lines:', resultLines.slice(0, 10));
+
                 // Try to detect format
                 let hasKarmaRushPattern = false;
                 let hasRunSignupPattern = false;
@@ -719,7 +730,9 @@ Akey
                     // Pattern: Place, Bib, Name, Year, Team Name, Score, Team Score, Team Place, Clock Time, Pace
                     // Key identifier: Has "Team Finish List" in header and score column with special values like "< 5", "> 7", "(number)"
                     // Example: "1    4244    Karee Cooley    11    Powell High School    1    41    2    18:34.88    6:00"
-                    if (resultLines[i].match(/^1(\t|\s{2,})\d{3,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,2}(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})(\d+|<\s*\d+|>\s*\d+|\(\d+\))(\t|\s{2,})/)) {
+                    const ctPattern = /^1(\t|\s{2,})\d{3,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,2}(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})(\d+|<\s*\d+|>\s*\d+|\(\d+\))(\t|\s{2,})/;
+                    if (resultLines[i].match(ctPattern)) {
+                        console.log('Competitive Timing pattern matched at line', i, ':', resultLines[i]);
                         hasCompetitiveTimingPattern = true;
                         break;
                     }
