@@ -1485,7 +1485,8 @@ Akey
                     // Process KarmaRush format
                     let i = 0;
                     while (i < resultLines.length) {
-                        if (resultLines[i].match(/^\d+\t/)) {
+                        // Match place number followed by tab or multiple spaces
+                        if (resultLines[i].match(/^\d+(\t|\s{2,})/)) {
                             let result = parseKarmaRushTabFormat(resultLines, i);
                             if (result) {
                                 extractedResults.push(result);
@@ -3085,14 +3086,15 @@ Akey
                 time: '',
                 pace: ''
             };
-            
+
             const firstLine = lines[i].trim();
-            const tabParts = firstLine.split('\t').map(p => p.trim());
-            
+            // Split by tab or multiple spaces (2+)
+            const tabParts = firstLine.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+
             if (tabParts.length < 2) {
                 return null;
             }
-            
+
             result.place = tabParts[0];
             result.name = tabParts[1];
             i++;
