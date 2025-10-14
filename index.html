@@ -707,9 +707,9 @@ Akey
                         startIndex = i;
                         break;
                     }
-                    // KarmaRush/other formats: line starting with just place "1"
-                    // Very restrictive to avoid false matches with team summaries
-                    if (line.match(/^1$/)) {
+                    // KarmaRush format: line starting with "1" followed by name (not just "1" alone)
+                    // Format: "1    Robert Mechura" or "1\tRobert Mechura"
+                    if (line.match(/^1(\t|\s+)\w/)) {
                         startIndex = i;
                         break;
                     }
