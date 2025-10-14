@@ -314,6 +314,35 @@
             margin-bottom: 20px;
         }
         
+        .tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            border-bottom: 2px solid #e0e0e0;
+        }
+
+        .tab-button {
+            padding: 12px 24px;
+            background: none;
+            border: none;
+            border-bottom: 3px solid transparent;
+            color: #666;
+            font-size: 15px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .tab-button:hover {
+            color: #333;
+            background: #f8f9fa;
+        }
+
+        .tab-button.active {
+            color: #007bff;
+            border-bottom-color: #007bff;
+        }
+
         .toast {
             position: fixed;
             bottom: 30px;
@@ -437,7 +466,14 @@ Akey
             </div>
         </div>
 
-        <div class="table-container">
+        <!-- Tab buttons for switching between views -->
+        <div class="tabs" id="outputTabs" style="display: none;">
+            <button class="tab-button active" onclick="switchTab('results')">Individual Results</button>
+            <button class="tab-button" onclick="switchTab('teamScores')">Team Scores</button>
+        </div>
+
+        <!-- Individual Results Table -->
+        <div class="table-container" id="resultsContainer">
             <div class="table-header">
                 <div class="table-title">Extracted Results</div>
                 <button class="btn btn-secondary" style="padding: 8px 16px;" onclick="copyTableData()">
@@ -467,12 +503,44 @@ Akey
                 </table>
             </div>
         </div>
+
+        <!-- Team Scores Container -->
+        <div class="table-container" id="teamScoresContainer" style="display: none;">
+            <div class="table-header">
+                <div class="table-title">Team Scores</div>
+                <button class="btn btn-secondary" style="padding: 8px 16px;" onclick="copyTeamScores()">
+                    Copy Team Scores
+                </button>
+            </div>
+            <div class="table-wrapper">
+                <pre id="teamScoresOutput" style="font-family: 'Courier New', monospace; padding: 20px; background: #f8f9fa; border-radius: 8px; overflow-x: auto; white-space: pre;">No team scores yet. Paste team scores data above and click "Extract Results"</pre>
+            </div>
+        </div>
     </div>
 
     <div id="toast" class="toast"></div>
 
     <script>
         let extractedResults = [];
+        let isTeamScoresMode = false;
+
+        function switchTab(tab) {
+            const resultsContainer = document.getElementById('resultsContainer');
+            const teamScoresContainer = document.getElementById('teamScoresContainer');
+            const tabButtons = document.querySelectorAll('.tab-button');
+
+            if (tab === 'results') {
+                resultsContainer.style.display = 'block';
+                teamScoresContainer.style.display = 'none';
+                tabButtons[0].classList.add('active');
+                tabButtons[1].classList.remove('active');
+            } else {
+                resultsContainer.style.display = 'none';
+                teamScoresContainer.style.display = 'block';
+                tabButtons[0].classList.remove('active');
+                tabButtons[1].classList.add('active');
+            }
+        }
 
         function showToast(message) {
             const toast = document.getElementById('toast');
@@ -1511,12 +1579,25 @@ Akey
                     return;
                 }
 
-                displayResults();
-                
+                // Check if this is team scores data
+                const firstDataRow = extractedResults.find(r => !r.isHeader);
+                isTeamScoresMode = firstDataRow && !firstDataRow.bib && !firstDataRow.name && !firstDataRow.grade;
+
+                if (isTeamScoresMode) {
+                    displayTeamScores();
+                    document.getElementById('outputTabs').style.display = 'flex';
+                    switchTab('teamScores');
+                } else {
+                    displayResults();
+                    document.getElementById('outputTabs').style.display = 'none';
+                    document.getElementById('resultsContainer').style.display = 'block';
+                    document.getElementById('teamScoresContainer').style.display = 'none';
+                }
+
                 document.getElementById('rowCount').textContent = extractedResults.length;
                 document.getElementById('platform').textContent = detectPlatform(input);
                 document.getElementById('status').textContent = 'Complete';
-                
+
                 showToast(`Extracted ${extractedResults.length} results!`);
                 
             } catch (error) {
@@ -3220,6 +3301,66 @@ Akey
                     </tr>
                 `;
             }).join('');
+        }
+
+        function displayTeamScores() {
+            const output = document.getElementById('teamScoresOutput');
+
+            if (extractedResults.length === 0) {
+                output.textContent = 'No team scores yet. Paste team scores data above and click "Extract Results"';
+                return;
+            }
+
+            // Build formatted output with proper column alignment
+            let lines = [];
+            let maxPlaceWidth = 5;
+            let maxTeamWidth = 40;
+            let maxPointsWidth = 6;
+
+            // Calculate maximum widths
+            extractedResults.forEach(r => {
+                if (!r.isHeader && r.place) {
+                    maxPlaceWidth = Math.max(maxPlaceWidth, r.place.length);
+                    if (r.team) maxTeamWidth = Math.max(maxTeamWidth, r.team.length);
+                    if (r.time) maxPointsWidth = Math.max(maxPointsWidth, r.time.length);
+                }
+            });
+
+            // Format each row
+            extractedResults.forEach(r => {
+                if (r.isHeader) {
+                    // For headers, just output as-is but convert tabs to proper spacing
+                    if (r.headerText.includes('\t')) {
+                        // This is the column header (PLACE\tTEAM\tPOINTS)
+                        const parts = r.headerText.split('\t');
+                        const line = parts[0].padEnd(maxPlaceWidth) + '  ' +
+                                   parts[1].padEnd(maxTeamWidth) + '  ' +
+                                   parts[2];
+                        lines.push(line);
+                    } else {
+                        // Race name header
+                        lines.push(r.headerText);
+                    }
+                } else {
+                    // Data row: align columns
+                    const place = (r.place || '').padEnd(maxPlaceWidth);
+                    const team = (r.team || '').padEnd(maxTeamWidth);
+                    const points = r.time || '';
+                    lines.push(`${place}  ${team}  ${points}`);
+                }
+            });
+
+            output.textContent = lines.join('\n');
+        }
+
+        function copyTeamScores() {
+            const output = document.getElementById('teamScoresOutput').textContent;
+            if (!output || output.includes('No team scores')) {
+                showToast('No team scores to copy');
+                return;
+            }
+            copyToClipboard(output);
+            showToast('Team scores copied to clipboard!');
         }
 
         function copyAsSpreadsheet() {
