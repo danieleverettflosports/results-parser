@@ -593,6 +593,12 @@ Akey
                         startIndex = i;
                         break;
                     }
+                    // Competitive Timing format: "1    4244    Karee Cooley    11    Powell High School    1    41    2    18:34.88    6:00"
+                    // Place, Bib (3-5 digits), Name, Year, Team
+                    if (line.match(/^1(\t|\s{2,})\d{3,5}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,2}(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Race Roster format: "537    Banner Barnes    1    NOBLESVILLE    JR    1    1    4:52    15:03.7"
                     // Starts with bib number, then name
                     if (line.match(/^\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d+(\t|\s{2,})[A-Z\s]+(\t|\s{2,})(FR|SO|JR|SR)(\t|\s{2,})/i)) {
@@ -648,6 +654,12 @@ Akey
                 // Need more lines for MeetPro since there's often team scoring summary before Individual Results
                 let headerCheckStart = Math.max(0, startIndex - 50);
                 for (let i = startIndex - 1; i >= headerCheckStart; i--) {
+                    // Competitive Timing format: look for headers with "Team Finish List"
+                    // Pattern: "Varsity Girls Team Finish List-General"
+                    if (lines[i].match(/team\s+finish\s+list/i) && lines[i].match(/(?:varsity|jv|boys?|girls?|men|women)/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Race Roster format: look for headers with "Individuals"
                     // Pattern: "Varsity Boys 5K - Individuals"
                     if (lines[i].match(/individuals/i) && lines[i].match(/(?:varsity|jv|boys?|girls?|men|women)/i)) {
@@ -700,8 +712,17 @@ Akey
                 let hasMeetProPattern = false;
                 let hasMyRaceResultPattern = false;
                 let hasRaceRosterPattern = false;
+                let hasCompetitiveTimingPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // Competitive Timing format detection
+                    // Pattern: Place, Bib, Name, Year, Team Name, Score, Team Score, Team Place, Clock Time, Pace
+                    // Key identifier: Has "Team Finish List" in header and score column with special values like "< 5", "> 7", "(number)"
+                    // Example: "1    4244    Karee Cooley    11    Powell High School    1    41    2    18:34.88    6:00"
+                    if (resultLines[i].match(/^1(\t|\s{2,})\d{3,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,2}(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})(\d+|<\s*\d+|>\s*\d+|\(\d+\))(\t|\s{2,})/)) {
+                        hasCompetitiveTimingPattern = true;
+                        break;
+                    }
                     // Race Roster format detection
                     // Pattern: Bib, Name, Overall Place, Team Name, Class, Team Place, Scoring Place, Pace, Time
                     // Key identifier: Has "Individuals" in header and bib at start of line
@@ -854,7 +875,49 @@ Akey
                     }
                 }
 
-                if (hasRaceRosterPattern) {
+                if (hasCompetitiveTimingPattern) {
+                    // Process Competitive Timing format
+                    // Look for race headers like "Varsity Girls Team Finish List"
+                    let lastHeaderCandidate = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for race headers with "Team Finish List" keyword
+                        // Pattern: "Varsity Girls Team Finish List-General"
+                        if (line &&
+                            line.match(/team\s+finish\s+list/i) &&
+                            line.match(/(?:varsity|jv|boys?|girls?|men|women)/i) &&
+                            line.length < 100) {
+                            // Store as candidate, add it before first result
+                            // Remove "Team Finish List-General" suffix
+                            lastHeaderCandidate = line
+                                .replace(/\s+team\s+finish\s+list.*$/i, '')
+                                .trim();
+                        } else {
+                            let result = parseCompetitiveTimingFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate.toUpperCase(),
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                } else if (hasRaceRosterPattern) {
                     // Process Race Roster format
                     // Look for race headers like "Varsity Boys 5K - Individuals"
                     let lastHeaderCandidate = null;
@@ -2211,6 +2274,70 @@ Akey
             };
         }
 
+        function parseCompetitiveTimingFormat(line) {
+            // Format: Place, Bib, Name, Year, Team Name, Score, Team Score, Team Place, Clock Time, Pace
+            // Example: "1    4244    Karee Cooley    11    Powell High School    1    41    2    18:34.88    6:00"
+            // Score can be: number, "(number)" for non-scoring, "< 5", "> 7"
+
+            const trimmed = line.trim();
+
+            // Skip header lines and non-data lines
+            if (!trimmed ||
+                trimmed.match(/^(Place|Bib|Name|Year|Team|Score|Clock|Time|Pace|Top)/i) ||
+                trimmed.match(/^-+$/)) {
+                return null;
+            }
+
+            // Split by tabs or multiple spaces
+            const parts = trimmed.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            if (parts.length < 10) return null;
+
+            // Place - first column
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Bib - second column
+            const bib = parts[1];
+            if (!bib.match(/^\d{3,5}$/)) return null;
+
+            // Name - third column (format: "FirstName LastName")
+            const name = parts[2];
+            if (!name || name.length === 0) return null;
+
+            // Year/Grade - fourth column (9-12)
+            const grade = parts[3];
+            if (!grade.match(/^\d{1,2}$/)) return null;
+
+            // Team Name - fifth column
+            const team = parts[4];
+            if (!team || team.length === 0) return null;
+
+            // Score - sixth column (can be number, "(number)", "< 5", "> 7")
+            const score = parts[5];
+
+            // Skip Team Score (seventh column) and Team Place (eighth column)
+
+            // Clock Time - ninth column (format: MM:SS.SS)
+            const time = parts[8];
+            if (!time || !time.match(/^\d{1,2}:\d{2}\.\d{2}$/)) return null;
+
+            // Pace - tenth column (format: M:SS)
+            const pace = parts[9];
+            if (!pace || !pace.match(/^\d{1,2}:\d{2}$/)) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: grade,
+                points: score && score.match(/^\d+$/) ? score : '',
+                pace: pace
+            };
+        }
+
         function parseRaceRosterFormat(line) {
             // Format: Bib, Name, Overall Place, Team Name, Class, Team Place, Scoring Place, Pace, Time, [optional split fields]
             // Example: "537    Banner Barnes    1    NOBLESVILLE    JR    1    1    4:52    15:03.7    07:35.0    4:54    2    07:28.7    4:50    1"
@@ -2845,6 +2972,9 @@ Akey
 
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
+
+            // Check for Competitive Timing format: Has "Team Finish List"
+            if (lowerText.includes('team finish list') && text.match(/^1(\t|\s{2,})\d{3,5}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,2}(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})(\d+|<\s*\d+|>\s*\d+|\(\d+\))/m)) return 'Competitive Timing';
 
             // Check for Race Roster format: Has "Individuals" and bib at start
             if (lowerText.includes('individuals') && text.match(/^\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d+(\t|\s{2,})[A-Z\s]+(\t|\s{2,})(FR|SO|JR|SR)/m)) return 'Race Roster';
