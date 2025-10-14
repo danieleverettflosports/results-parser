@@ -724,8 +724,17 @@ Akey
                 let hasMyRaceResultPattern = false;
                 let hasRaceRosterPattern = false;
                 let hasCompetitiveTimingPattern = false;
+                let hasTeamScoresPattern = false;
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    // Team Scores format (MileSplit team scores - not individual results)
+                    // Look for "Team Scores" in header and "Place    Team    Points" structure
+                    if (resultLines[i].match(/Team Scores$/i) ||
+                        (resultLines[i].match(/^Place\s+Team\s+Points/i) &&
+                         resultLines.some(line => line.match(/^\d+\s+\+.*1-5 Split/)))) {
+                        hasTeamScoresPattern = true;
+                        break;
+                    }
                     // Competitive Timing format detection
                     // Pattern: Place, Bib, Name, Year, Team Name, Score, Team Score, Team Place, Clock Time, Pace
                     // Key identifier: Has "Team Finish List" in header and score column with special values like "< 5", "> 7", "(number)"
@@ -874,10 +883,8 @@ Akey
                     // MileSplit - but not MeetPro (which also has bib numbers)
                     // MileSplit has "Logo" lines or standalone bib numbers on their own line
                     // MeetPro has bib numbers in the same line as the athlete data
-                    // Also detect MileSplit Team Scores format
                     if (resultLines[i].match(/^Logo$/i) ||
-                        (resultLines[i].match(/^#\d+$/) || resultLines[i].match(/-\s*#\d+$/)) ||
-                        resultLines[i].match(/Team Scores$/i)) {
+                        (resultLines[i].match(/^#\d+$/) || resultLines[i].match(/-\s*#\d+$/))) {
                         hasMileSplitPattern = true;
                         break;
                     }
@@ -974,6 +981,119 @@ Akey
                                 }
                                 extractedResults.push(result);
                             }
+                        }
+                    }
+                } else if (hasTeamScoresPattern) {
+                    // Process Team Scores format (MileSplit team scores - not individual results)
+                    // Format: Race name with "Team Scores", then Place/Team/Points/Scorers/Times data
+                    let i = 0;
+                    while (i < resultLines.length) {
+                        const line = resultLines[i].trim();
+
+                        // Check for team scores header line
+                        // Pattern: "Girls 2 Mile Run Finals Team Scores"
+                        if (line.match(/Team Scores$/i)) {
+                            // Extract race name and normalize
+                            let raceHeader = line.replace(/\s*Team Scores$/i, '').trim();
+                            raceHeader = raceHeader
+                                .replace(/\b5k\b/gi, '5km')
+                                .replace(/\b5000m\b/gi, '5km')
+                                .replace(/\b(\d+)\s*mile\b/gi, '$1 Mile')
+                                .replace(/\s*Finals?\s*/gi, ' ');
+
+                            // Add race header
+                            extractedResults.push({
+                                isHeader: true,
+                                headerText: raceHeader.toUpperCase().trim(),
+                                place: '',
+                                bib: '',
+                                name: '',
+                                team: '',
+                                time: '',
+                                grade: '',
+                                points: '',
+                                pace: ''
+                            });
+
+                            // Add column header row
+                            extractedResults.push({
+                                isHeader: true,
+                                headerText: 'PLACE          TEAM                    POINTS',
+                                place: '',
+                                bib: '',
+                                name: '',
+                                team: '',
+                                time: '',
+                                grade: '',
+                                points: '',
+                                pace: ''
+                            });
+
+                            i++;
+
+                            // Skip column header lines (Place, Team, Points, Scorers, Times)
+                            while (i < resultLines.length &&
+                                   resultLines[i].trim().match(/^(Place|Team|Points?|Scorers?|Times?)/i)) {
+                                i++;
+                            }
+
+                            // Parse team entries
+                            while (i < resultLines.length) {
+                                const teamLine = resultLines[i].trim();
+
+                                // Stop at empty line or next race
+                                if (!teamLine || teamLine.match(/Team Scores$/i)) {
+                                    break;
+                                }
+
+                                // Check if this is a place number
+                                if (teamLine.match(/^\d+$/)) {
+                                    const place = teamLine;
+                                    i++;
+
+                                    // Next line(s) contain team name (might be duplicated)
+                                    let teamName = '';
+                                    if (i < resultLines.length) {
+                                        teamName = resultLines[i].trim();
+                                        i++;
+                                        // Skip duplicate team name if present
+                                        if (i < resultLines.length && resultLines[i].trim() === teamName) {
+                                            i++;
+                                        }
+                                    }
+
+                                    // Next line contains points and scoring info
+                                    let points = '';
+                                    if (i < resultLines.length) {
+                                        const scoreLine = resultLines[i].trim();
+                                        const pointsMatch = scoreLine.match(/^(\d+)/);
+                                        if (pointsMatch) {
+                                            points = pointsMatch[1];
+                                        }
+                                        i++;
+                                    }
+
+                                    // Add team score entry
+                                    if (teamName && points) {
+                                        extractedResults.push({
+                                            isHeader: false,
+                                            headerText: '',
+                                            place: place,
+                                            bib: '',
+                                            name: '',
+                                            team: teamName,
+                                            time: points,
+                                            grade: '',
+                                            points: points,
+                                            pace: ''
+                                        });
+                                    }
+                                } else {
+                                    i++;
+                                }
+                            }
+                        } else {
+                            i++;
                         }
                     }
                 } else if (hasMyRaceResultPattern) {
@@ -1334,119 +1454,6 @@ Akey
                                 pace: ''
                             });
                             i++;
-                            continue;
-                        }
-
-                        // Check for team scores section
-                        // Pattern: "Girls 2 Mile Run Finals Team Scores" or similar
-                        if (line.match(/^(Boys?|Girls?|Men|Women|HS|MS|Varsity|JV).*Team Scores$/i)) {
-                            // Extract the race name from the team scores header
-                            let raceHeader = line.replace(/\s*Team Scores$/i, '').trim();
-                            // Normalize: convert "5k" to "5km" and standardize distance formats
-                            raceHeader = raceHeader.replace(/\b5k\b/gi, '5km')
-                                                   .replace(/\b(\d+)\s*mile\b/gi, '$1 Mile')
-                                                   .replace(/\b5000m\b/gi, '5km');
-
-                            // Add race header
-                            extractedResults.push({
-                                isHeader: true,
-                                headerText: raceHeader.toUpperCase(),
-                                place: '',
-                                bib: '',
-                                name: '',
-                                team: '',
-                                time: '',
-                                grade: '',
-                                points: '',
-                                pace: ''
-                            });
-
-                            // Add team scores sub-header
-                            extractedResults.push({
-                                isHeader: true,
-                                headerText: 'TEAM SCORES',
-                                place: '',
-                                bib: '',
-                                name: '',
-                                team: '',
-                                time: '',
-                                grade: '',
-                                points: '',
-                                pace: ''
-                            });
-
-                            i++;
-                            // Skip header lines like "Place    Team    Points    Scorers    Times"
-                            while (i < resultLines.length && resultLines[i].trim().match(/^(Place|Team|Points|Scorers|Times)/i)) {
-                                i++;
-                            }
-
-                            // Now parse team score entries
-                            while (i < resultLines.length) {
-                                const teamLine = resultLines[i].trim();
-
-                                // Stop if we hit another section or empty lines
-                                if (teamLine === '' ||
-                                    teamLine.match(/^All Events$/i) ||
-                                    teamLine.match(/^(Boys?|Girls?|Men|Women).*\d+(k|m|mile)/i)) {
-                                    break;
-                                }
-
-                                // Check if this is a place number line
-                                if (teamLine.match(/^\d+$/)) {
-                                    const place = teamLine;
-                                    i++;
-
-                                    // Next line(s) should be the team name (can be multiple lines)
-                                    let teamName = '';
-                                    while (i < resultLines.length) {
-                                        const nextLine = resultLines[i].trim();
-                                        // Team name repeated on same line means we're on the team name
-                                        if (nextLine && !nextLine.match(/^\d+\s+\d+\+/) && !nextLine.match(/^\d{1,2}:\d{2}/)) {
-                                            teamName = nextLine;
-                                            i++;
-                                            // Skip duplicate team name line if it exists
-                                            if (i < resultLines.length && resultLines[i].trim() === teamName) {
-                                                i++;
-                                            }
-                                            break;
-                                        }
-                                        i++;
-                                    }
-
-                                    // Next line should be the points and scorers
-                                    let points = '';
-                                    if (i < resultLines.length) {
-                                        const scoreLine = resultLines[i].trim();
-                                        // Extract just the points number (first number before the scorers)
-                                        const pointsMatch = scoreLine.match(/^(\d+)/);
-                                        if (pointsMatch) {
-                                            points = pointsMatch[1];
-                                            i++;
-                                        }
-                                    }
-
-                                    // Add team score result
-                                    // For team scores, we show: Place, Team Name, Points
-                                    // Map points to the 'time' field so it displays in the rightmost column
-                                    if (teamName && points) {
-                                        extractedResults.push({
-                                            isHeader: false,
-                                            headerText: '',
-                                            place: place,
-                                            bib: '',
-                                            name: '',
-                                            team: teamName,
-                                            time: points,  // Display points in the time column
-                                            grade: '',
-                                            points: points,  // Keep for reference
-                                            pace: ''
-                                        });
-                                    }
-                                } else {
-                                    i++;
-                                }
-                            }
                             continue;
                         }
 
@@ -3104,6 +3111,13 @@ Akey
 
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
+
+            // Check for Team Scores format (MileSplit team scores - not individual results)
+            if (lowerText.includes('team scores') &&
+                text.match(/Place\s+Team\s+Points/i) &&
+                text.match(/\d+\s+\+.*1-5 Split/)) {
+                return 'MileSplit Team Scores';
+            }
 
             // Check for Competitive Timing format: Has "Team Finish List"
             if (lowerText.includes('team finish list') && text.match(/^1(\t|\s{2,})\d{3,5}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d{1,2}(\t|\s{2,})[A-Z][\w\s]+(\t|\s{2,})(\d+|<\s*\d+|>\s*\d+|\(\d+\))/m)) return 'Competitive Timing';
