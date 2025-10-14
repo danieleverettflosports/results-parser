@@ -807,10 +807,12 @@ Akey
 
                 // Check for Team Scores format by looking at ALL lines (not just resultLines)
                 // because the header might be before the startIndex
+                // Only match if we have BOTH the header AND the split pattern or the Place/Team/Points header
                 const hasTeamScoresHeader = lines.some(line => line.match(/Team Scores$/i));
                 const hasSplitPattern = resultLines.some(line => line.match(/\d+\+\d+\+\d+.*1-5 Split/i));
+                const hasTeamScoresColumns = resultLines.some(line => line.match(/^Place\s+Team\s+Points/i));
 
-                if (hasTeamScoresHeader || hasSplitPattern) {
+                if ((hasTeamScoresHeader && hasSplitPattern) || hasTeamScoresColumns) {
                     console.log('Team Scores format detected via header or split pattern');
                     hasTeamScoresPattern = true;
                 }
@@ -1517,10 +1519,10 @@ Akey
                         }
 
                         // Also check for standalone event header patterns as fallback
-                        // Matches formats like: "HS Girls 5k", "Varsity Boys 3200m", "JV Girls 2 Mile", "MS Boys 4k"
-                        if (line.match(/^(HS|MS|Varsity|JV|Freshman|Sophomore|Junior|Senior)\s+(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)/i) ||
-                            // Also match simpler patterns like "Girls 5k", "Boys 3200m"
-                            line.match(/^(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)/i)) {
+                        // Matches formats like: "HS Girls 5k", "Varsity Boys 3200m", "JV Girls 2 Mile", "MS Boys 4k", "Boys 5k Run"
+                        if (line.match(/^(HS|MS|Varsity|JV|Freshman|Sophomore|Junior|Senior)\s+(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)(\s+run)?/i) ||
+                            // Also match simpler patterns like "Girls 5k", "Boys 3200m", "Boys 5k Run"
+                            line.match(/^(Boys?|Girls?|Men|Women)\s+(\d+k|\d+m|\d*\s*mile)(\s+run)?/i)) {
                             // Normalize header: convert "5k" to "5km"
                             let normalizedHeader = line.replace(/\b5k\b/gi, '5km');
                             extractedResults.push({
