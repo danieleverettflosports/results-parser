@@ -1582,7 +1582,8 @@ Akey
                     // Process RunSignup format
                     let i = 0;
                     while (i < resultLines.length) {
-                        if (resultLines[i].match(/^\d+(\t|$)/)) {
+                        // Match place number at start, optionally followed by tab/spaces and bib
+                        if (resultLines[i].match(/^\d+(\t|\s+\d{3,4})?(\t|$)/)) {
                             let result = parseRunSignupFormat(resultLines, i);
                             if (result) {
                                 extractedResults.push(result);
