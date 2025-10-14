@@ -803,6 +803,13 @@ Akey
                 const resultLines = lines.slice(startIndex);
                 console.log('Result lines count:', resultLines.length);
                 console.log('First 10 result lines:', resultLines.slice(0, 10));
+                console.log('Lines around start index (40-55):', lines.slice(40, 55));
+
+                // Debug: Look for name patterns
+                const namePatternLines = lines.filter((line, idx) =>
+                    line.match(/^[A-Z][a-z]+$/) && idx > startIndex && idx < startIndex + 50
+                );
+                console.log('Lines matching name pattern after start:', namePatternLines.slice(0, 10));
 
                 // Try to detect format
                 let hasKarmaRushPattern = false;
