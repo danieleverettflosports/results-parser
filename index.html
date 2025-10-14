@@ -3321,12 +3321,12 @@ Akey
             // Format each row
             extractedResults.forEach(r => {
                 if (r.isHeader) {
-                    // For headers, use fixed spacing
+                    // For headers, use fixed spacing (2 spaces between columns)
                     if (r.headerText.includes('\t')) {
                         // This is the column header (PLACE\tTEAM\tPOINTS)
                         const parts = r.headerText.split('\t');
                         const line = parts[0].padEnd(PLACE_WIDTH) + '  ' +
-                                   parts[1].padEnd(TEAM_WIDTH) + ' ' + parts[2];
+                                   parts[1].padEnd(TEAM_WIDTH) + '  ' + parts[2];
                         lines.push(line);
                     } else {
                         // Race name header
@@ -3336,13 +3336,13 @@ Akey
                     // Data row: fixed column widths, truncate team name if needed
                     const place = (r.place || '').padEnd(PLACE_WIDTH);
                     let team = r.team || '';
-                    // Truncate team name if longer than TEAM_WIDTH to ensure space before points
+                    // Truncate team name if longer than TEAM_WIDTH to ensure 2 spaces before points
                     if (team.length > TEAM_WIDTH) {
                         team = team.substring(0, TEAM_WIDTH);
                     }
                     team = team.padEnd(TEAM_WIDTH);
                     const points = r.time || '';
-                    lines.push(`${place}  ${team} ${points}`);
+                    lines.push(`${place}  ${team}  ${points}`);
                 }
             });
 
