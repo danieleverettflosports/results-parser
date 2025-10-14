@@ -593,6 +593,12 @@ Akey
                         startIndex = i;
                         break;
                     }
+                    // Race Roster format: "537    Banner Barnes    1    NOBLESVILLE    JR    1    1    4:52    15:03.7"
+                    // Starts with bib number, then name
+                    if (line.match(/^\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d+(\t|\s{2,})[A-Z\s]+(\t|\s{2,})(FR|SO|JR|SR)(\t|\s{2,})/i)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Athlete Guild Format 1: "Name    Bib    Team    Rank    Time..."
                     // Athlete Guild Format 2: "Name    Bib    Place    Time    Pace    Team"
                     // Check for name pattern followed by bib number
@@ -864,8 +870,10 @@ Akey
                             line.match(/(?:varsity|jv|boys?|girls?|men|women)/i) &&
                             line.length < 100) {
                             // Store as candidate, add it before first result
-                            // Replace "5K" with "5km run"
-                            lastHeaderCandidate = line.replace(/\b5K\b/gi, '5km run');
+                            // Replace "5K" with "5km run" and remove " - Individuals"
+                            lastHeaderCandidate = line
+                                .replace(/\b5K\b/gi, '5km run')
+                                .replace(/\s*-?\s*individuals?\s*$/i, '');
                             raceDistance = null; // Already in header
                         } else {
                             let result = parseRaceRosterFormat(line);
