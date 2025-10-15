@@ -745,10 +745,12 @@ Akey
                         break;
                     }
                     // RaceResult format: "1    1    226    Maya Easterwood    Coppell    5:13    5:40    6:12    17:06    5:30 / mi"
-                    // Pattern: Place, Points, Bib (1-4 digits), Name, Team, Split1, Split2, Split3, Time, Pace
+                    // Or: "1.    ~    1695    Jane Allen    Billings West    9    6:36    20:30"
+                    // Pattern: Place, Points, Bib (1-4 digits), Name, Team, [Grade], [Pace], Time
                     // Key identifier: Bib comes BEFORE Name (distinguishes from MyRaceResult where bib comes after team)
-                    // Points can be: number, "-", "(n/s)", or "(number)"
-                    if (line.match(/^1(\t|\s{2,})(\d+|-|\(n\/s\)|\(\d+\))(\t|\s{2,})\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][\w\s]*(\t|\s{2,})[\w\s]+(\t|\s{2,})(\d{1,2}:\d{2}(\t|\s{2,})){2,}/)) {
+                    // Points can be: number, "-", "~", "(n/s)", or "(number)"
+                    // Place can be: "1" or "1."
+                    if (line.match(/^1\.?(\t|\s{2,})(\d+|-|~|\(n\/s\)|\(\d+\))(\t|\s{2,})\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][\w\s]*(\t|\s{2,})[\w\s]+(\t|\s{2,})\d{1,2}:\d{2}/)) {
                         startIndex = i;
                         break;
                     }
@@ -895,8 +897,10 @@ Akey
                     // Pattern: Place, Points, Bib, Name, Team, ..., Time, Pace (tab or multi-space separated)
                     // Key identifier: Bib (1-4 digits) comes BEFORE Name
                     // Example: "1    1    226    Maya Easterwood    Coppell    5:13    5:40    6:12    17:06    5:30 / mi"
-                    // Points can be: number, "-", "(n/s)", or "(number)"
-                    if (resultLines[i].match(/^1(\t|\s{2,})(\d+|-|\(n\/s\)|\(\d+\))(\t|\s{2,})\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][\w\s]*(\t|\s{2,})[\w\s]+(\t|\s{2,})(\d{1,2}:\d{2}(\t|\s{2,})){2,}/)) {
+                    // Example: "1.    ~    1695    Jane Allen    Billings West    9    6:36    20:30"
+                    // Points can be: number, "-", "~", "(n/s)", or "(number)"
+                    // Place can be: "1" or "1."
+                    if (resultLines[i].match(/^1\.?(\t|\s{2,})(\d+|-|~|\(n\/s\)|\(\d+\))(\t|\s{2,})\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][\w\s]*(\t|\s{2,})[\w\s]+(\t|\s{2,})\d{1,2}:\d{2}/)) {
                         console.log('RaceResult pattern matched at line', i, ':', resultLines[i]);
                         hasRaceResultPattern = true;
                         break;
@@ -3433,13 +3437,15 @@ Akey
             // Typically 9-10 fields with splits and pace
             if (parts.length < 6) return null;
 
-            // First part should be place number
-            const place = parts[0];
-            if (!place.match(/^\d+$/)) return null;
+            // First part should be place number (may have trailing period: "1." or "1")
+            let place = parts[0];
+            if (!place.match(/^\d+\.?$/)) return null;
+            // Remove trailing period if present
+            place = place.replace(/\.$/, '');
 
-            // Second part should be points (can be a number, "-", "(n/s)", or "(number)")
+            // Second part should be points (can be a number, "-", "~", "(n/s)", or "(number)")
             const points = parts[1];
-            if (!points.match(/^(\d+|-|\(n\/s\)|\(\d+\))$/)) return null;
+            if (!points.match(/^(\d+|-|~|\(n\/s\)|\(\d+\))$/)) return null;
 
             // Third part should be bib (1-4 digits)
             const bib = parts[2];
@@ -3468,17 +3474,35 @@ Akey
 
             if (timeIndex === -1) return null;
 
-            // Before time, there should be 2-3 split times (format M:SS or MM:SS)
-            // Count backwards from timeIndex to find where splits start
-            let firstSplitIndex = timeIndex - 1;
+            // Check if pace comes before time (format variation)
+            // Pace format: M:SS or MM:SS (shorter times, 5-10 minute range)
+            let paceIndex = -1;
+            if (timeIndex > 4 && parts[timeIndex - 1].match(/^\d{1,2}:\d{2}$/)) {
+                const potentialPaceParts = parts[timeIndex - 1].split(':');
+                const minutes = parseInt(potentialPaceParts[0]);
+                // Pace is typically 5-10 minutes per mile
+                if (minutes >= 5 && minutes <= 12) {
+                    paceIndex = timeIndex - 1;
+                }
+            }
+
+            // Before pace/time, there might be grade and/or split times
+            // Grade format: single digit (8, 9, 10, 11, 12) or "FR", "SO", "JR", "SR"
+            let gradeIndex = -1;
+            let searchStart = paceIndex !== -1 ? paceIndex - 1 : timeIndex - 1;
+
+            if (searchStart >= 4 && parts[searchStart].match(/^(8|9|10|11|12|FR|SO|JR|SR)$/i)) {
+                gradeIndex = searchStart;
+                searchStart--;
+            }
+
+            // Before grade/pace/time, there might be 2-3 split times (format M:SS or MM:SS)
+            let firstSplitIndex = searchStart;
             while (firstSplitIndex >= 4 && parts[firstSplitIndex].match(/^\d{1,2}:\d{2}$/)) {
                 firstSplitIndex--;
             }
 
-            // Everything from firstSplitIndex+1 to timeIndex-1 are splits
             // Everything from part 3 (name) to firstSplitIndex are name and team
-            // Strategy: Name is typically in part 3, team is part 4 to firstSplitIndex
-
             let name = parts[3];
             let team = '';
 
@@ -3489,9 +3513,18 @@ Akey
 
             const time = parts[timeIndex];
 
-            // Pace is optional, might be after time (format like "5:30 / mi")
+            // Extract grade if found
+            let grade = '';
+            if (gradeIndex !== -1) {
+                grade = parts[gradeIndex];
+            }
+
+            // Extract pace
             let pace = '';
-            if (timeIndex + 1 < parts.length) {
+            if (paceIndex !== -1) {
+                pace = parts[paceIndex];
+            } else if (timeIndex + 1 < parts.length) {
+                // Check if pace is after time (original format)
                 const potentialPace = parts.slice(timeIndex + 1).join(' ');
                 if (potentialPace.match(/\d{1,2}:\d{2}/)) {
                     pace = potentialPace;
@@ -3500,7 +3533,7 @@ Akey
 
             // Extract points value, removing parentheses if present
             let pointsValue = '';
-            if (points && points !== '-' && points !== '(n/s)') {
+            if (points && points !== '-' && points !== '~' && points !== '(n/s)') {
                 // Remove parentheses if present: "(182)" -> "182"
                 pointsValue = points.replace(/[()]/g, '');
             }
@@ -3511,7 +3544,7 @@ Akey
                 name: name,
                 team: team,
                 time: time,
-                grade: '',
+                grade: grade,
                 points: pointsValue,
                 pace: pace
             };
