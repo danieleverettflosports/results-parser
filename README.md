@@ -8,6 +8,7 @@ Transform messy race results into beautiful, organized data. Supports multiple p
 - **MileSplit**
 - **Athlete Guild**
 - **Endurance Splits**
+- **MeetPro**
 
 ## Features
 
@@ -43,6 +44,9 @@ Tab-separated format with Name, Bib, Team, Rank, Time
 
 ### Endurance Splits
 Format with O'All Place, Score, Bib, Name, Team, Time, Pace
+
+### MeetPro
+Tab-separated format with Place, Name (LAST, First), Year, Bib, Team, Score, Time, Gap, Avg. Mile
 
 ## Development
 

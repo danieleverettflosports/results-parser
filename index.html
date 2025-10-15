@@ -744,6 +744,14 @@ Akey
                         startIndex = i;
                         break;
                     }
+                    // RaceResult format: "1    1    226    Maya Easterwood    Coppell    5:13    5:40    6:12    17:06    5:30 / mi"
+                    // Pattern: Place, Points, Bib (1-4 digits), Name, Team, Split1, Split2, Split3, Time, Pace
+                    // Key identifier: Bib comes BEFORE Name (distinguishes from MyRaceResult where bib comes after team)
+                    // Points can be: number, "-", "(n/s)", or "(number)"
+                    if (line.match(/^1(\t|\s{2,})(\d+|-|\(n\/s\)|\(\d+\))(\t|\s{2,})\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][\w\s]*(\t|\s{2,})[\w\s]+(\t|\s{2,})(\d{1,2}:\d{2}(\t|\s{2,})){2,}/)) {
+                        startIndex = i;
+                        break;
+                    }
                 }
 
                 if (startIndex === -1) {
@@ -847,6 +855,7 @@ Akey
                 let hasTiffinPattern = false;
                 let hasMeetProPattern = false;
                 let hasMyRaceResultPattern = false;
+                let hasRaceResultPattern = false;
                 let hasRaceRosterPattern = false;
                 let hasCompetitiveTimingPattern = false;
                 let hasTeamScoresPattern = false;
@@ -880,6 +889,16 @@ Akey
                     // Example: "537    Banner Barnes    1    NOBLESVILLE    JR    1    1    4:52    15:03.7"
                     if (resultLines[i].match(/^\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][a-z]+(\t|\s{2,})\d+(\t|\s{2,})[A-Z\s]+(\t|\s{2,})(FR|SO|JR|SR)(\t|\s{2,})\d+(\t|\s{2,})\d+(\t|\s{2,})\d{1,2}:\d{2}(\t|\s{2,})\d{1,2}:\d{2}\.\d/)) {
                         hasRaceRosterPattern = true;
+                        break;
+                    }
+                    // RaceResult format detection
+                    // Pattern: Place, Points, Bib, Name, Team, ..., Time, Pace (tab or multi-space separated)
+                    // Key identifier: Bib (1-4 digits) comes BEFORE Name
+                    // Example: "1    1    226    Maya Easterwood    Coppell    5:13    5:40    6:12    17:06    5:30 / mi"
+                    // Points can be: number, "-", "(n/s)", or "(number)"
+                    if (resultLines[i].match(/^1(\t|\s{2,})(\d+|-|\(n\/s\)|\(\d+\))(\t|\s{2,})\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][\w\s]*(\t|\s{2,})[\w\s]+(\t|\s{2,})(\d{1,2}:\d{2}(\t|\s{2,})){2,}/)) {
+                        console.log('RaceResult pattern matched at line', i, ':', resultLines[i]);
+                        hasRaceResultPattern = true;
                         break;
                     }
                     // MyRaceResult format detection
@@ -1620,6 +1639,17 @@ Akey
                             i++;
                         }
                     }
+                } else if (hasRaceResultPattern) {
+                    // Process RaceResult format
+                    // Format: Place, Points, Bib (1-4 digits), Name, Team, Split1, Split2, Split3, Time, Pace
+                    console.log('Processing RaceResult format');
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseRaceResultFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                    console.log('RaceResult parsing complete, extracted', extractedResults.length, 'results');
                 } else {
                     showError('Could not detect data format. Please ensure you copied the entire results table.');
                     document.getElementById('status').textContent = 'Error';
@@ -3382,6 +3412,109 @@ Akey
             }
             
             return result.name && result.time ? { ...result, nextIndex: i } : null;
+        }
+
+        function parseRaceResultFormat(line) {
+            // Format: Place, Points, Bib (1-4 digits), Name, Team, Split1, Split2, Split3, Time, Pace
+            // Example: "1    1    226    Maya Easterwood    Coppell    5:13    5:40    6:12    17:06    5:30 / mi"
+            // Key: Bib comes BEFORE Name (distinguishes from MyRaceResult where bib comes after team)
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines
+            if (!trimmed || trimmed.match(/^(Place|Points|Bib|Name|Team|Time|Pace|Split|---+)/i)) {
+                return null;
+            }
+
+            // Split by tabs or multiple spaces
+            let parts = trimmed.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            // Need at least: Place, Points, Bib, Name, Team, Time (6 fields minimum)
+            // Typically 9-10 fields with splits and pace
+            if (parts.length < 6) return null;
+
+            // First part should be place number
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Second part should be points (can be a number, "-", "(n/s)", or "(number)")
+            const points = parts[1];
+            if (!points.match(/^(\d+|-|\(n\/s\)|\(\d+\))$/)) return null;
+
+            // Third part should be bib (1-4 digits)
+            const bib = parts[2];
+            if (!bib.match(/^\d{1,4}$/)) return null;
+
+            // Fourth part should be the name
+            // Name could be "Maya Easterwood" (single field with first and last) or could span multiple fields
+            const namePart = parts[3];
+            if (!namePart || !namePart.match(/^[A-Z][a-z]/)) return null;
+
+            // Find the main time field (should be near the end, format MM:SS or MM:SS.S)
+            // Main race time is typically longer (15:00-25:00 range)
+            let timeIndex = -1;
+            for (let i = parts.length - 1; i >= 4; i--) {
+                // Main race time format: MM:SS or MM:SS.S (no "/" character like in pace)
+                if (parts[i].match(/^\d{2}:\d{2}(\.\d+)?$/) && !parts[i].includes('/')) {
+                    const timeParts = parts[i].split(':');
+                    const minutes = parseInt(timeParts[0]);
+                    // Race times are typically 10+ minutes
+                    if (minutes >= 10) {
+                        timeIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (timeIndex === -1) return null;
+
+            // Before time, there should be 2-3 split times (format M:SS or MM:SS)
+            // Count backwards from timeIndex to find where splits start
+            let firstSplitIndex = timeIndex - 1;
+            while (firstSplitIndex >= 4 && parts[firstSplitIndex].match(/^\d{1,2}:\d{2}$/)) {
+                firstSplitIndex--;
+            }
+
+            // Everything from firstSplitIndex+1 to timeIndex-1 are splits
+            // Everything from part 3 (name) to firstSplitIndex are name and team
+            // Strategy: Name is typically in part 3, team is part 4 to firstSplitIndex
+
+            let name = parts[3];
+            let team = '';
+
+            if (firstSplitIndex >= 4) {
+                // Team is from part 4 to firstSplitIndex (inclusive)
+                team = parts.slice(4, firstSplitIndex + 1).join(' ');
+            }
+
+            const time = parts[timeIndex];
+
+            // Pace is optional, might be after time (format like "5:30 / mi")
+            let pace = '';
+            if (timeIndex + 1 < parts.length) {
+                const potentialPace = parts.slice(timeIndex + 1).join(' ');
+                if (potentialPace.match(/\d{1,2}:\d{2}/)) {
+                    pace = potentialPace;
+                }
+            }
+
+            // Extract points value, removing parentheses if present
+            let pointsValue = '';
+            if (points && points !== '-' && points !== '(n/s)') {
+                // Remove parentheses if present: "(182)" -> "182"
+                pointsValue = points.replace(/[()]/g, '');
+            }
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: pointsValue,
+                pace: pace
+            };
         }
 
         function detectPlatform(text) {
