@@ -914,6 +914,18 @@ Akey
                         hasRaceRosterPattern = true;
                         break;
                     }
+                    // VFP format: "Place Score Bib No Name Team Grade Time Pace"
+                    // Pattern: starts with "1" followed by number/score, has pace like "6:04/M"
+                    // Examples: "1 (< 5) 594 Name Team 9 12:08.84 6:04/M"
+                    //           "1 1 35 Lionel Vargas MARTIN 10 16:55.0 5:27/M"
+                    //           "1 1 4712 Noah Strohman Holliday 4:44.4 9:35.2 14:40.0 14:40.0 4:42/M 12"
+                    // Pace can be at end or followed by year/grade
+                    // IMPORTANT: Check BEFORE RaceResult since both formats have Place, Score, Bib pattern
+                    // but VFP has /M in pace while RaceResult doesn't
+                    if (resultLines[i].match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M(\s|$)/i)) {
+                        hasVFPPattern = true;
+                        break;
+                    }
                     // RaceResult format detection
                     // Pattern: Place, Points, Bib, Name, Team, ..., Time, Pace (tab or multi-space separated)
                     // Key identifier: Bib (1-4 digits) comes BEFORE Name
@@ -921,6 +933,7 @@ Akey
                     // Example: "1.    ~    1695    Jane Allen    Billings West    9    6:36    20:30"
                     // Points can be: number, "-", "~", "(n/s)", or "(number)"
                     // Place can be: "1" or "1."
+                    // NOTE: VFP format is checked BEFORE this to avoid false matches (VFP has /M in pace)
                     if (resultLines[i].match(/^1\.?(\t|\s{2,})(\d+|-|~|\(n\/s\)|\(\d+\))(\t|\s{2,})\d{1,4}(\t|\s{2,})[A-Z][a-z]+\s+[A-Z][\w\s]*(\t|\s{2,})[\w\s]+(\t|\s{2,})\d{1,2}:\d{2}/)) {
                         console.log('RaceResult pattern matched at line', i, ':', resultLines[i]);
                         hasRaceResultPattern = true;
@@ -992,16 +1005,6 @@ Akey
                     // Pattern: Place, Bib, Name, Time (00:HH:MM.S format)
                     if (resultLines[i].match(/^1\s+\d{2,5}\s+\w+.*\d{2}:\d{2}:\d{2}\.\d/i)) {
                         hasWebTimerPattern = true;
-                        break;
-                    }
-                    // VFP format: "Place Score Bib No Name Team Grade Time Pace"
-                    // Pattern: starts with "1" followed by number/score, has pace like "6:04/M"
-                    // Examples: "1 (< 5) 594 Name Team 9 12:08.84 6:04/M"
-                    //           "1 1 35 Lionel Vargas MARTIN 10 16:55.0 5:27/M"
-                    //           "1 1 4712 Noah Strohman Holliday 4:44.4 9:35.2 14:40.0 14:40.0 4:42/M 12"
-                    // Pace can be at end or followed by year/grade
-                    if (resultLines[i].match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M(\s|$)/i)) {
-                        hasVFPPattern = true;
                         break;
                     }
                     // WyoPreps format: "Place    Bib    Name    Year    Team Name    Score    Team Score    Team Place    Clock Time    Pace"
@@ -1905,8 +1908,12 @@ Akey
                 const name = parts[headerColumns.name]?.trim();
                 if (!name) return null;
 
-                const team = parts[headerColumns.team]?.trim();
+                let team = parts[headerColumns.team]?.trim();
                 if (!team) return null;
+
+                // Remove any time-like values from team name (split times that got merged)
+                // Pattern: MM:SS.S or M:SS.S
+                team = team.replace(/\s*\d{1,2}:\d{2}\.\d+/g, '').trim();
 
                 const time = parts[headerColumns.time]?.trim();
                 if (!time || !time.match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) return null;
