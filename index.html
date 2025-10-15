@@ -1527,6 +1527,8 @@ Akey
                     }
                 } else if (hasMileSplitPattern) {
                     // Process MileSplit format
+                    console.log('Processing MileSplit format');
+                    console.log('First 20 resultLines:', resultLines.slice(0, 20));
                     let i = 0;
                     while (i < resultLines.length) {
                         const line = resultLines[i].trim();
