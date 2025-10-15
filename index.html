@@ -732,8 +732,22 @@ Akey
                             break;
                         }
                     }
+                    // VFP format: Look for header line with "O'All Place" or column headers
+                    // Data starts on the next line after the header
+                    if (line.match(/(O'All\s+Place|^Place)(\t|\s{2,})Score(\t|\s{2,})Bib.*Name.*Team.*Time.*Pace/i)) {
+                        startIndex = i + 1;
+                        break;
+                    }
+                    // VFP format: data line with place, score, bib, and /M pace format
+                    // Format: "1    (< 5)    4712    Noah Strohman    Holliday High School    4:44.4    9:35.2    14:40.0    14:40.0    4:42/M    12"
+                    // Key: Score can be number or "(< 5)", has /M in pace, often has year at end
+                    if (line.match(/^1(\t|\s+)(\d+|\(.*\))(\t|\s+)\d{3,4}(\t|\s+)[A-Z].*\d{1,2}:\d{2}\/M/)) {
+                        startIndex = i;
+                        break;
+                    }
                     // KarmaRush format: line starting with "1" followed by name (not just "1" alone)
                     // Format: "1    Robert Mechura" or "1\tRobert Mechura"
+                    // Note: Must come AFTER VFP detection to avoid false matches
                     if (line.match(/^1(\t|\s+)\w/)) {
                         startIndex = i;
                         break;
@@ -981,10 +995,12 @@ Akey
                         break;
                     }
                     // VFP format: "Place Score Bib No Name Team Grade Time Pace"
-                    // Pattern: starts with "1" followed by number/score, has pace at end like "6:04/M"
+                    // Pattern: starts with "1" followed by number/score, has pace like "6:04/M"
                     // Examples: "1 (< 5) 594 Name Team 9 12:08.84 6:04/M"
                     //           "1 1 35 Lionel Vargas MARTIN 10 16:55.0 5:27/M"
-                    if (resultLines[i].match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M\s*$/i)) {
+                    //           "1 1 4712 Noah Strohman Holliday 4:44.4 9:35.2 14:40.0 14:40.0 4:42/M 12"
+                    // Pace can be at end or followed by year/grade
+                    if (resultLines[i].match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M(\s|$)/i)) {
                         hasVFPPattern = true;
                         break;
                     }
@@ -1475,11 +1491,42 @@ Akey
                     }
                 } else if (hasVFPPattern) {
                     // Process VFP format
+                    // Check if there's a header row to determine column positions
+                    let headerColumns = null;
+                    let dataStartIndex = 0;
+
+                    // Look for header row in original lines array (may be before startIndex)
+                    // Check from startIndex backwards up to 10 lines, then forward in resultLines
+                    const headerSearchStart = Math.max(0, startIndex - 10);
+                    const headerSearchEnd = Math.min(lines.length, startIndex + 5);
+
+                    for (let i = headerSearchStart; i < headerSearchEnd; i++) {
+                        if (lines[i].match(/(O'All\s+Place|Place).*Score.*Bib.*Name.*Team.*Time.*Pace/i)) {
+                            // Found header row, parse column positions
+                            const headerParts = lines[i].split(/\t/);
+                            headerColumns = {};
+                            for (let j = 0; j < headerParts.length; j++) {
+                                const col = headerParts[j].trim();
+                                if (col.match(/Place/i)) headerColumns.place = j;
+                                if (col.match(/^Score$/i)) headerColumns.score = j;
+                                if (col.match(/Bib/i)) headerColumns.bib = j;
+                                if (col.match(/^Name$/i)) headerColumns.name = j;
+                                if (col.match(/^Team$/i)) headerColumns.team = j;
+                                if (col.match(/^Time$/i)) headerColumns.time = j;
+                                if (col.match(/^Pace$/i)) headerColumns.pace = j;
+                                if (col.match(/^Year$/i)) headerColumns.year = j;
+                            }
+                            console.log('VFP header found at line', i, ':', lines[i]);
+                            console.log('VFP header columns detected:', headerColumns);
+                            break;
+                        }
+                    }
+
                     // First, identify team names from the data
                     const knownTeams = identifyVFPTeams(resultLines);
 
-                    for (let i = 0; i < resultLines.length; i++) {
-                        let result = parseVFPFormat(resultLines[i], knownTeams);
+                    for (let i = dataStartIndex; i < resultLines.length; i++) {
+                        let result = parseVFPFormat(resultLines[i], knownTeams, headerColumns);
                         if (result) {
                             extractedResults.push(result);
                         }
@@ -1833,32 +1880,99 @@ Akey
             return confirmedTeams;
         }
 
-        function parseVFPFormat(line, knownTeams = []) {
+        function parseVFPFormat(line, knownTeams = [], headerColumns = null) {
             // Format: "Place    Score    Bib No    Name    Team    Grade    Time    Pace"
             // Example: "1    (< 5)    594    Jose Luis Flores    Laredo Harmony School    9    12:08.84    6:04/M"
             // When copied from PDF: "1 (< 5) 594 Jose Luis Flores Laredo Harmony School 9 12:08.84 6:04/M"
 
             const trimmed = line.trim();
 
-            // Extract from right to left (more reliable):
-            // Pace at end: "6:04/M" or "5:27/M"
-            const paceMatch = trimmed.match(/\s+(\d{1,2}:\d{2}\/M)\s*$/);
-            if (!paceMatch) return null;
-            let remaining = trimmed.substring(0, trimmed.length - paceMatch[0].length);
+            // If header columns are provided, use direct column indexing
+            if (headerColumns) {
+                const parts = trimmed.split(/\t/);
 
-            // Time before pace: "12:08.84" or "16:55.0" (1 or 2 decimal places)
+                // Validate we have enough parts
+                if (parts.length <= Math.max(headerColumns.place || 0, headerColumns.time || 0, headerColumns.pace || 0)) {
+                    return null;
+                }
+
+                const place = parts[headerColumns.place]?.trim();
+                if (!place || !place.match(/^\d+$/)) return null;
+
+                const bib = parts[headerColumns.bib]?.trim();
+                if (!bib || !bib.match(/^\d{1,4}$/)) return null;
+
+                const name = parts[headerColumns.name]?.trim();
+                if (!name) return null;
+
+                const team = parts[headerColumns.team]?.trim();
+                if (!team) return null;
+
+                const time = parts[headerColumns.time]?.trim();
+                if (!time || !time.match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) return null;
+
+                const pace = parts[headerColumns.pace]?.trim();
+                const grade = headerColumns.year !== undefined ? parts[headerColumns.year]?.trim() : '';
+
+                return {
+                    place: place,
+                    bib: bib,
+                    name: name,
+                    team: team,
+                    time: time,
+                    grade: grade || '',
+                    points: '',
+                    pace: pace || ''
+                };
+            }
+
+            // Extract from right to left (more reliable):
+            // Two possible formats:
+            // 1. Original: Place Score Bib Name Team [Grade] Time Pace
+            // 2. With splits: Place Score Bib Name Team 1M 2M 5K Time Pace [Year]
+
+            // Check if there's a year/grade at the very end (after pace)
+            let grade = '';
+            let workingStr = trimmed;
+            const yearAtEndMatch = workingStr.match(/\s+(\d{1,2}T?)\s*$/);
+            if (yearAtEndMatch && yearAtEndMatch[1].match(/^\d{1,2}T?$/)) {
+                // Could be a year/grade at the end
+                const potentialYear = yearAtEndMatch[1];
+                // Check if there's a pace pattern before it
+                const beforeYear = workingStr.substring(0, workingStr.length - yearAtEndMatch[0].length);
+                if (beforeYear.match(/\d{1,2}:\d{2}\/M\s*$/)) {
+                    // Yes, this is the year after pace
+                    grade = potentialYear.replace(/T$/i, '');
+                    workingStr = beforeYear;
+                }
+            }
+
+            // Pace: "6:04/M" or "5:27/M" or "4:42/M"
+            const paceMatch = workingStr.match(/\s+(\d{1,2}:\d{2}\/M)\s*$/);
+            if (!paceMatch) return null;
+            let remaining = workingStr.substring(0, workingStr.length - paceMatch[0].length);
+
+            // Time before pace: "12:08.84" or "16:55.0" or "14:40.0" (1 or 2 decimal places)
+            // This should be the LAST time value before pace (not split times)
             const timeMatch = remaining.match(/\s+(\d{1,2}:\d{2}\.\d{1,2})\s*$/);
             if (!timeMatch) return null;
             const time = timeMatch[1];
             remaining = remaining.substring(0, remaining.length - timeMatch[0].length);
 
-            // Grade before time: "9", "10", "11", "12", or "9T" (with optional T)
-            // Grade is optional - some entries may not have it
-            const gradeMatch = remaining.match(/\s+(\d{1,2}T?)\s*$/);
-            let grade = '';
-            if (gradeMatch) {
-                grade = gradeMatch[1].replace(/T$/i, ''); // Remove trailing T
-                remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
+            // Remove any split times before the final time (e.g., "4:44.4 9:35.2 14:40.0")
+            // Split times are also in MM:SS.S format, so remove them
+            while (remaining.match(/\s+\d{1,2}:\d{2}\.\d{1,2}\s*$/)) {
+                remaining = remaining.replace(/\s+\d{1,2}:\d{2}\.\d{1,2}\s*$/, '');
+            }
+
+            // Grade before splits/time (original format): "9", "10", "11", "12", or "9T"
+            // Only check if we haven't already found grade at the end
+            if (!grade) {
+                const gradeMatch = remaining.match(/\s+(\d{1,2}T?)\s*$/);
+                if (gradeMatch) {
+                    grade = gradeMatch[1].replace(/T$/i, '');
+                    remaining = remaining.substring(0, remaining.length - gradeMatch[0].length);
+                }
             }
 
             // Now from left: Place, Score, Bib, Name, Team
