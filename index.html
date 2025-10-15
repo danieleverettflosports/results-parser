@@ -615,6 +615,12 @@ Akey
 
                 for (let i = searchStart; i < lines.length; i++) {
                     const line = lines[i];
+                    // River City Races format: "1 Carson Smith Air Academy High 1044 M 15:32.9"
+                    // Pattern: Place, Name (first last), Team, Bib (3-4 digits), Gender (M/F), Time
+                    if (line.match(/^1\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s+[\w\s]+ +\d{3,4}\s+(M|F)\s+\d{1,2}:\d{2}\.\d/)) {
+                        startIndex = i;
+                        break;
+                    }
                     // Tiffin format: "1 Andrew Seiverth 12 Perrysburg 17:35.4 1"
                     if (line.match(/^1\s+\w+\s+\w+\s+(7|8|9|10|11|12)\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d(\s+\d+)?\s*$/)) {
                         startIndex = i;
@@ -861,6 +867,7 @@ Akey
                 let hasRaceRosterPattern = false;
                 let hasCompetitiveTimingPattern = false;
                 let hasTeamScoresPattern = false;
+                let hasRiverCityPattern = false;
 
                 // Check for Team Scores format by looking at ALL lines (not just resultLines)
                 // because the header might be before the startIndex
@@ -1045,6 +1052,14 @@ Akey
                         resultLines[i+1].match(/^[A-Z][a-z]+$/) &&
                         resultLines[i+2].match(/^[A-Z][a-z]+$/)) {
                         hasRunSignupPattern = true;
+                        break;
+                    }
+                    // River City Races format detection
+                    // Pattern: Place, Name (first last), Team (variable), Bib (3-4 digits), Gender (M/F), Time
+                    // Example: "1 Carson Smith Air Academy High 1044 M 15:32.9"
+                    // Key identifier: Ends with M or F followed by time
+                    if (resultLines[i].match(/^1\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s+[\w\s]+ +\d{3,4}\s+(M|F)\s+\d{1,2}:\d{2}\.\d/)) {
+                        hasRiverCityPattern = true;
                         break;
                     }
                 }
@@ -1654,6 +1669,17 @@ Akey
                         }
                     }
                     console.log('RaceResult parsing complete, extracted', extractedResults.length, 'results');
+                } else if (hasRiverCityPattern) {
+                    // Process River City Races format
+                    // Format: Place, Name (first last), Team (variable), Bib (3-4 digits), Gender (M/F), Time
+                    console.log('Processing River City Races format');
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseRiverCityFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                    console.log('River City parsing complete, extracted', extractedResults.length, 'results');
                 } else {
                     showError('Could not detect data format. Please ensure you copied the entire results table.');
                     document.getElementById('status').textContent = 'Error';
@@ -3547,6 +3573,67 @@ Akey
                 grade: grade,
                 points: pointsValue,
                 pace: pace
+            };
+        }
+
+        function parseRiverCityFormat(line) {
+            // Format: Place, Name (first last), Team (variable words), Bib (3-4 digits), Gender (M/F), Time
+            // Example: "1 Carson Smith Air Academy High 1044 M 15:32.9"
+            // Strategy: Parse from both ends - place from left, gender/time from right, find bib, rest is name and team
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines
+            if (!trimmed || trimmed.match(/^(Overall|Name|Team|Bib|Gender|Time|Gend|---+)/i)) {
+                return null;
+            }
+
+            // Split by whitespace
+            const parts = trimmed.split(/\s+/);
+
+            // Need at least: Place, FirstName, LastName, Team, Bib, Gender, Time (7 fields minimum)
+            if (parts.length < 7) return null;
+
+            // First part should be place number
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Work backwards from the end
+            // Last field should be time (MM:SS.S format)
+            const time = parts[parts.length - 1];
+            if (!time.match(/^\d{1,2}:\d{2}\.\d$/)) return null;
+
+            // Second to last should be gender (M or F)
+            const gender = parts[parts.length - 2];
+            if (!gender.match(/^[MF]$/)) return null;
+
+            // Third from last should be bib number (3-4 digits)
+            const bib = parts[parts.length - 3];
+            if (!bib.match(/^\d{3,4}$/)) return null;
+
+            // Everything between place and bib is: FirstName, LastName, Team (variable words)
+            // Strategy: First 2 words after place are name, rest is team
+            if (parts.length - 4 < 3) return null; // Need at least first, last, and team
+
+            const firstName = parts[1];
+            const lastName = parts[2];
+            const name = `${firstName} ${lastName}`;
+
+            // Team is everything from index 3 to bib (parts.length - 4)
+            const teamEndIndex = parts.length - 3;
+            const team = parts.slice(3, teamEndIndex).join(' ');
+
+            if (!team || team.length === 0) return null;
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: '',
+                pace: ''
             };
         }
 
