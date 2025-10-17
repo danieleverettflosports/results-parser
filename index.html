@@ -587,8 +587,7 @@ Akey
                         lines[i].match(/^Top$/i) ||
                         lines[i].match(/Place\s+Bib\s+Name/i) ||
                         lines[i].match(/Individual Results/i) ||
-                        lines[i].match(/Place\s+Name\s+Grade\s+Team\s+Time/i) ||
-                        lines[i].match(/Team Scores$/i)) {
+                        lines[i].match(/Place\s+Name\s+Grade\s+Team\s+Time/i)) {
                         individualsIndex = i;
                         break;
                     }
@@ -745,10 +744,30 @@ Akey
                         startIndex = i;
                         break;
                     }
+                    // HyTek format: Look for Event header or Name/Year/School header
+                    // These headers appear before the individual results
+                    // Header patterns: "Event 2 Boys 5k Run CC" or "Name Year School Finals Points"
+                    // MUST CHECK BEFORE MeetPro since both use comma in name
+                    if (line.match(/^Event\s+\d+\s+(Boys?|Girls?|Men|Women)/i) ||
+                        line.match(/^Name\s+Year\s+School/i)) {
+                        startIndex = i;
+                        break;
+                    }
+                    // HyTek data line: Title Case name with comma (Last, First)
+                    // Example: "1 Meyer, Josiah 10 Central Heights 17:23.10 1"
+                    // Example: "36 McRoberts, Tristen 9 Central Heights 23:28.85"
+                    // MeetPro uses UPPERCASE (MARTINEZ, Alek) - checked after this
+                    // Team scores have no comma: "1 Central Heights 12 1 2 4 5 10 11 17"
+                    // Time can have optional points after it
+                    if (line.match(/^\d+\s+[A-Z][a-z]+,\s+[A-Z][a-z]+\s+([6-9]|1[0-2])\s+[\w\s]+?\s+\d{1,2}:\d{2}\.\d{1,2}/)) {
+                        startIndex = i;
+                        break;
+                    }
                     // KarmaRush format: line starting with "1" followed by name (not just "1" alone)
                     // Format: "1    Robert Mechura" or "1\tRobert Mechura"
-                    // Note: Must come AFTER VFP detection to avoid false matches
-                    if (line.match(/^1(\t|\s+)\w/)) {
+                    // Must NOT have comma (to avoid matching HyTek/MeetPro)
+                    // Note: Must come AFTER HyTek/MeetPro detection
+                    if (line.match(/^1(\t|\s+)[A-Z][a-z]+\s+[A-Z]/) && !line.includes(',')) {
                         startIndex = i;
                         break;
                     }
@@ -758,9 +777,10 @@ Akey
                         startIndex = i + 1;
                         break;
                     }
-                    // MeetPro format: Also check for data lines with LASTNAME, Firstname format
+                    // MeetPro format: UPPERCASE LASTNAME, Firstname format
                     // Format: "25 MARTINEZ, Alek FR 1333 Hialeah Educational - 22:23.5..."
-                    if (line.match(/^\d+\s+[A-Z]+,\s+[A-Z]/)) {
+                    // Note: Uses ALL CAPS for last name (different from HyTek's Title Case)
+                    if (line.match(/^\d+\s+[A-Z]{2,},\s+[A-Z]/)) {
                         startIndex = i;
                         break;
                     }
@@ -882,6 +902,7 @@ Akey
                 let hasCompetitiveTimingPattern = false;
                 let hasTeamScoresPattern = false;
                 let hasRiverCityPattern = false;
+                let hasHyTekPattern = false;
 
                 // Check for Team Scores format by looking at ALL lines (not just resultLines)
                 // because the header might be before the startIndex
@@ -1079,6 +1100,17 @@ Akey
                     // Key identifier: Ends with M or F followed by time
                     if (resultLines[i].match(/^1\s+[A-Z][a-z]+\s+[A-Z][a-z]+\s+[\w\s]+ +\d{3,4}\s+(M|F)\s+\d{1,2}:\d{2}\.\d/)) {
                         hasRiverCityPattern = true;
+                        break;
+                    }
+                    // HyTek format detection
+                    // Pattern: Place, Name (Last, First), Grade, Team, Time (with 2 decimals), Points (optional)
+                    // Example: "1 Meyer, Josiah 10 Central Heights 17:23.10 1"
+                    // Example: "36 McRoberts, Tristen 9 Central Heights 23:28.85"
+                    // Key identifiers: LASTNAME, format and Name/Year/School/Finals headers or Results - Men/Women
+                    // Check for the characteristic header pattern OR the data pattern with comma in name
+                    if (resultLines[i].match(/^(Name\s+Year\s+School|Results\s+-\s+(Men|Women)|Event\s+\d+\s+(Boys?|Girls?))/i) ||
+                        resultLines[i].match(/^\d+\s+[A-Z][a-z]+,\s+[A-Z][a-z]+\s+([6-9]|1[0-2])\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d{1,2}/)) {
+                        hasHyTekPattern = true;
                         break;
                     }
                 }
@@ -1730,6 +1762,54 @@ Akey
                         }
                     }
                     console.log('River City parsing complete, extracted', extractedResults.length, 'results');
+                } else if (hasHyTekPattern) {
+                    // Process HyTek format
+                    // Format: Place, Name (Last, First), Grade, Team, Time, Points (optional)
+                    // Look for event headers and section headers
+                    console.log('Processing HyTek format');
+                    let lastHeaderCandidate = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for event header (e.g., "Event 2 Boys 5k Run CC")
+                        if (line.match(/^Event\s+\d+\s+(Boys?|Girls?|Men|Women)/i)) {
+                            // Extract and normalize the event name
+                            lastHeaderCandidate = line
+                                .replace(/^Event\s+\d+\s+/i, '')
+                                .replace(/\s+CC$/i, '')
+                                .trim()
+                                .toUpperCase();
+                        }
+                        // Check for results section header (e.g., "Results - Men")
+                        else if (line.match(/^Results\s+-\s+(Men|Women)/i)) {
+                            // This is a sub-section header, we can skip it
+                            continue;
+                        }
+                        else {
+                            let result = parseHyTekFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate,
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                    console.log('HyTek parsing complete, extracted', extractedResults.length, 'results');
                 } else {
                     showError('Could not detect data format. Please ensure you copied the entire results table.');
                     document.getElementById('status').textContent = 'Error';
@@ -3758,6 +3838,79 @@ Akey
             };
         }
 
+        function parseHyTekFormat(line) {
+            // Format: Place, Name (Last, First), Grade, School/Team, Time, Points (optional)
+            // Example: "1 Meyer, Josiah 10 Central Heights 17:23.10 1"
+            // Example: "4 Alvarez, Myles 11 Pleasanton 17:53.39" (no points)
+            // Header: "Name Year School Finals Points"
+            // Also has "Results - Men" or "Results - Women" section headers
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines, headers, separators, and team scores section
+            if (!trimmed ||
+                trimmed.match(/^(Event|\=+|Name|Year|School|Finals|Points|Results\s+-|Team\s+Scores|Rank\s+Team)/i) ||
+                trimmed.match(/^Total Time:|^Average:/)) {
+                return null;
+            }
+
+            // Split by whitespace
+            const parts = trimmed.split(/\s+/);
+
+            // Need at least: Place, LastName, FirstName, Grade, Team, Time (6 fields minimum)
+            if (parts.length < 6) return null;
+
+            // First part should be place number
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Second part should be last name with comma (LASTNAME,)
+            if (!parts[1] || !parts[1].includes(',')) return null;
+
+            // Extract name (format: "LastName, FirstName")
+            const lastName = parts[1].replace(/,$/, '');
+            const firstName = parts[2];
+            const name = `${lastName}, ${firstName}`;
+
+            // Grade should be next (9-12 for high school, or 6-8 for middle school)
+            const grade = parts[3];
+            if (!grade.match(/^([6-9]|1[0-2])$/)) return null;
+
+            // Find the time field - it's in MM:SS.S or MM:SS.SS format
+            let timeIndex = -1;
+            for (let i = 4; i < parts.length; i++) {
+                if (parts[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
+                    timeIndex = i;
+                    break;
+                }
+            }
+
+            if (timeIndex === -1) return null;
+            const time = parts[timeIndex];
+
+            // Team is everything between grade and time
+            const teamParts = parts.slice(4, timeIndex);
+            if (teamParts.length === 0) return null;
+            const team = teamParts.join(' ');
+
+            // Points (if present) is after time
+            let points = '';
+            if (timeIndex + 1 < parts.length && parts[timeIndex + 1].match(/^\d+$/)) {
+                points = parts[timeIndex + 1];
+            }
+
+            return {
+                place: place,
+                bib: '',
+                name: name,
+                team: team,
+                time: time,
+                grade: grade,
+                points: points,
+                pace: ''
+            };
+        }
+
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
 
@@ -3776,6 +3929,13 @@ Akey
 
             // Check for MyRaceResult format: Place, Points, Name, Team, Bib, Pace, Time
             if (text.match(/^1(\t|\s{2,})\d+(\t|\s{2,})[A-Z][a-z]+\s+[A-Z]+(\t|\s{2,})[\w\s]+(\t|\s{2,})\d{3,5}(\t|\s{2,})\d{1,2}:\d{2}(\t|\s{2,})\d{1,2}:\d{2}/m)) return 'MyRaceResult';
+
+            // Check for HyTek format: Has Event headers or Name/Year/School/Finals header pattern
+            // Must check BEFORE MeetPro since both use LASTNAME, Firstname but HyTek has specific headers
+            if ((text.match(/^Event\s+\d+\s+(Boys?|Girls?|Men|Women)/mi) && text.match(/Name\s+Year\s+School/i)) ||
+                (text.match(/Name\s+Year\s+School\s+Finals/i) && text.match(/^\d+\s+[A-Z][a-z]+,\s+[A-Z][a-z]+\s+(9|10|11|12)\s+/m))) {
+                return 'HyTek';
+            }
 
             // Check for MeetPro first (has "Race #X" pattern)
             if (text.match(/Race\s+#\d+/i)) return 'MeetPro';
