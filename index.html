@@ -2266,9 +2266,9 @@ Akey
             if (!placeStr.match(/^\d+\.$/)) return null;
             const place = placeStr.replace('.', '');
 
-            // Bib (1-3 digits)
+            // Bib (1-4 digits)
             const bib = parts[1];
-            if (!bib.match(/^\d{1,3}$/)) return null;
+            if (!bib.match(/^\d{1,4}$/)) return null;
 
             // Name (remaining words before year)
             const name = parts.slice(2).join(' ');
