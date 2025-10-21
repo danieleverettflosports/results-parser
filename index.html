@@ -401,13 +401,13 @@
     <div class="container">
         <header>
             <h1>Race Results Extractor</h1>
-            <p>Transform messy race results into beautiful, organized data - supports KarmaRush, RunSignup, MileSplit, and RunHigh</p>
+            <p>Transform messy race results into beautiful, organized data - supports KarmaRush, RunSignup, MileSplit, RunHigh, and GoChip</p>
         </header>
 
         <div class="control-panel">
             <div class="input-section">
                 <label class="input-label">Paste Race Results Here</label>
-                <textarea id="input" class="input-area" placeholder="Copy and paste race results from KarmaRush, RunSignup, MileSplit, or RunHigh...
+                <textarea id="input" class="input-area" placeholder="Copy and paste race results from KarmaRush, RunSignup, MileSplit, RunHigh, or GoChip...
 
 RunHigh Example:
   509     2     2  Kendel Jones, 12          8:10.5   16:17.8    5:15  Elk Lake
@@ -720,6 +720,20 @@ Akey
                             break;
                         }
                     }
+                    // GoChip format: "1" on its own line, followed by name, lap times, and "Chip:" line
+                    // Example: "1" -> "Aiden Ready" -> "11:12.1" -> "23:17.1" -> "79Chip: C79Christian..."
+                    if (line.match(/^1$/) && i + 4 < lines.length) {
+                        // Check if next line is a name (starts with capital letter, not a number or "Logo")
+                        if (lines[i + 1].match(/^[A-Z][a-z]+\s+[A-Z]/i) &&
+                            // Check if there are time lines following
+                            lines[i + 2].match(/^\d{1,2}:\d{2}\.\d/) &&
+                            // Look for "Chip:" line in the next few lines
+                            (lines[i + 3].match(/Chip:\s*[CE]\d+/i) ||
+                             lines[i + 4].match(/Chip:\s*[CE]\d+/i))) {
+                            startIndex = i;
+                            break;
+                        }
+                    }
                     // RunSignup format: "1    580" (place + bib), followed by initial on next line
                     // Check if this line is "1" + bib number, and next few lines have the name pattern
                     if (line.match(/^1(\t|\s+)\d{3,4}$/) && i + 3 < lines.length) {
@@ -760,6 +774,18 @@ Akey
                     // Team scores have no comma: "1 Central Heights 12 1 2 4 5 10 11 17"
                     // Time can have optional points after it
                     if (line.match(/^\d+\s+[A-Z][a-z]+,\s+[A-Z][a-z]+\s+([6-9]|1[0-2])\s+[\w\s]+?\s+\d{1,2}:\d{2}\.\d{1,2}/)) {
+                        startIndex = i;
+                        break;
+                    }
+                    // Athletic.net format: "1 Anna Prusak 12 Hathaway Brown 18:05.59 1"
+                    // Pattern: Place, Name (First Last), Grade, Team, Time (MM:SS.SS), Points (optional)
+                    // Check for header "PLACE VIDEO ATHLETE" or data line starting with "1 FirstName LastName Grade"
+                    if (line.match(/^PLACE\s+VIDEO\s+ATHLETE\s+TEAM\s+MARK\s+POINTS/i)) {
+                        startIndex = i + 1;
+                        break;
+                    }
+                    // Check for data line: Must NOT have comma (to distinguish from HyTek)
+                    if (line.match(/^1\s+[A-Z][a-z]+\s+[A-Z][a-z']+\s+([6-9]|1[0-2])\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/) && !line.includes(',')) {
                         startIndex = i;
                         break;
                     }
@@ -903,6 +929,8 @@ Akey
                 let hasTeamScoresPattern = false;
                 let hasRiverCityPattern = false;
                 let hasHyTekPattern = false;
+                let hasAthleticNetPattern = false;
+                let hasGoChipPattern = false;
 
                 // Check for Team Scores format by looking at ALL lines (not just resultLines)
                 // because the header might be before the startIndex
@@ -1111,6 +1139,25 @@ Akey
                     if (resultLines[i].match(/^(Name\s+Year\s+School|Results\s+-\s+(Men|Women)|Event\s+\d+\s+(Boys?|Girls?))/i) ||
                         resultLines[i].match(/^\d+\s+[A-Z][a-z]+,\s+[A-Z][a-z]+\s+([6-9]|1[0-2])\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d{1,2}/)) {
                         hasHyTekPattern = true;
+                        break;
+                    }
+                    // Athletic.net format detection
+                    // Pattern: Place, Name (First Last), Grade, Team, Time (MM:SS.SS), Points (optional)
+                    // Example: "1 Anna Prusak 12 Hathaway Brown 18:05.59 1"
+                    // Example: "15 Tillie O'donnell 12 Will. South 20:02.07" (no points)
+                    // Key identifiers: No bib, no comma in name, grade after name, no /M in time
+                    // Check for header "PLACE VIDEO ATHLETE TEAM MARK POINTS" OR data pattern
+                    if (resultLines[i].match(/^PLACE\s+VIDEO\s+ATHLETE\s+TEAM\s+MARK\s+POINTS/i) ||
+                        resultLines[i].match(/^\d+\s+[A-Z][a-z]+\s+[A-Z][a-z']+\s+([6-9]|1[0-2])\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
+                        hasAthleticNetPattern = true;
+                        break;
+                    }
+                    // GoChip format detection
+                    // Multi-line format: Place, Name, Lap times, then "BibChip: CXXSchool"
+                    // Example: "79Chip: C79Christian Homelearners Estreams"
+                    // Key identifier: Line containing "Chip: C" or "Chip: E" followed by digits/letters
+                    if (resultLines[i].match(/^\d+Chip:\s*[CE]\d+/i)) {
+                        hasGoChipPattern = true;
                         break;
                     }
                 }
@@ -1810,6 +1857,91 @@ Akey
                         }
                     }
                     console.log('HyTek parsing complete, extracted', extractedResults.length, 'results');
+                } else if (hasAthleticNetPattern) {
+                    // Process Athletic.net format
+                    // Format: Place, Name (First Last), Grade, Team, Time, Points (optional)
+                    // Look for race headers like "Girls 5000 Meter Run Finals"
+                    console.log('Processing Athletic.net format');
+                    let lastHeaderCandidate = null;
+                    let nonScoringCount = 0;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for race header (e.g., "Girls 5000 Meter Run Finals")
+                        // Pattern: Gender + Distance + "Meter Run" or "Mile Run" + "Finals"
+                        if (line.match(/^(Boys?|Girls?|Men|Women)\s+\d+\s+(Meter|Mile)\s+Run(\s+Finals)?$/i)) {
+                            lastHeaderCandidate = line.toUpperCase();
+                        }
+                        // Skip header row with column names
+                        else if (line.match(/^PLACE\s+VIDEO\s+ATHLETE\s+TEAM\s+MARK\s+POINTS/i)) {
+                            continue;
+                        }
+                        else {
+                            let result = parseAthleticNetFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate,
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+
+                                // Count non-scoring athletes (no points)
+                                if (!result.points || result.points === '') {
+                                    nonScoringCount++;
+                                }
+                            }
+                        }
+                    }
+                    console.log('Athletic.net parsing complete, extracted', extractedResults.length, 'results');
+                    console.log('Non-scoring athletes (no team points):', nonScoringCount);
+
+                    // Display non-scoring count to user
+                    if (nonScoringCount > 0) {
+                        document.getElementById('status').textContent =
+                            `Extracted ${extractedResults.length} results (${nonScoringCount} non-scoring athletes)`;
+                    }
+                } else if (hasGoChipPattern) {
+                    // Process GoChip format
+                    // Multi-line format with place, name, lap times, and bib/chip/team info
+                    console.log('Processing GoChip format');
+                    let i = 0;
+                    while (i < resultLines.length) {
+                        const line = resultLines[i].trim();
+
+                        // Skip empty lines and header-like lines
+                        if (!line ||
+                            line.match(/^(Finish|Name|Lap|Click|FinishName|Categories|Race Tools|Registered|Did Not)/i)) {
+                            i++;
+                            continue;
+                        }
+
+                        // Check if this looks like a place line (number or DNS/DNF)
+                        if (line.match(/^\d+$/) || line.match(/^(DNS|DNF|DQ)$/i)) {
+                            let result = parseGoChipFormat(resultLines, i);
+                            if (result) {
+                                extractedResults.push(result);
+                                i = result.nextIndex;
+                            } else {
+                                i++;
+                            }
+                        } else {
+                            i++;
+                        }
+                    }
+                    console.log('GoChip parsing complete, extracted', extractedResults.length, 'results');
                 } else {
                     showError('Could not detect data format. Please ensure you copied the entire results table.');
                     document.getElementById('status').textContent = 'Error';
@@ -3911,6 +4043,165 @@ Akey
             };
         }
 
+        function parseAthleticNetFormat(line) {
+            // Format: Place, Name (First Last), Grade, Team, Time, Points (optional)
+            // Example: "1 Anna Prusak 12 Hathaway Brown 18:05.59 1"
+            // Example: "15 Tillie O'donnell 12 Will. South 20:02.07" (no points - non-scoring team)
+            // Key: No bib numbers, grade after name, time in MM:SS.SS format
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines, headers, and empty lines
+            if (!trimmed ||
+                trimmed.match(/^(PLACE|VIDEO|ATHLETE|TEAM|MARK|POINTS|---+)/i)) {
+                return null;
+            }
+
+            // Split by whitespace
+            const parts = trimmed.split(/\s+/);
+
+            // Need at least: Place, FirstName, LastName, Grade, Team, Time (6 fields minimum)
+            if (parts.length < 6) return null;
+
+            // First part should be place number
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Second and third parts should be name (First Last)
+            // Name should start with capital letter
+            if (!parts[1] || !parts[1].match(/^[A-Z]/)) return null;
+            if (!parts[2] || !parts[2].match(/^[A-Z]/)) return null;
+
+            const firstName = parts[1];
+            const lastName = parts[2];
+            const name = `${firstName} ${lastName}`;
+
+            // Fourth part should be grade (6-12)
+            const grade = parts[3];
+            if (!grade.match(/^([6-9]|1[0-2])$/)) return null;
+
+            // Find the time field - it's in MM:SS.SS format
+            let timeIndex = -1;
+            for (let i = 4; i < parts.length; i++) {
+                if (parts[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
+                    timeIndex = i;
+                    break;
+                }
+            }
+
+            if (timeIndex === -1) return null;
+            const time = parts[timeIndex];
+
+            // Team is everything between grade and time
+            const teamParts = parts.slice(4, timeIndex);
+            if (teamParts.length === 0) return null;
+            const team = teamParts.join(' ');
+
+            // Points (if present) is after time
+            let points = '';
+            if (timeIndex + 1 < parts.length && parts[timeIndex + 1].match(/^\d+$/)) {
+                points = parts[timeIndex + 1];
+            }
+
+            return {
+                place: place,
+                bib: '',
+                name: name,
+                team: team,
+                time: time,
+                grade: grade,
+                points: points,
+                pace: ''
+            };
+        }
+
+        function parseGoChipFormat(lines, startIndex) {
+            // GoChip format is a multi-line format:
+            // Line 1: Place (number, DNS, DNF, etc.)
+            // Line 2: Name
+            // Line 3+: One or more lap times (MM:SS.S format)
+            // Last line: BibChip: CXXSchool
+            // Example:
+            // 1
+            // Aiden Ready
+            // 11:12.1
+            // 23:17.1
+            // 79Chip: C79Christian Homelearners Estreams
+
+            let i = startIndex;
+            let result = {
+                place: '',
+                bib: '',
+                name: '',
+                team: '',
+                time: '',
+                grade: '',
+                points: '',
+                pace: ''
+            };
+
+            // Line 1: Place
+            const placeLine = lines[i]?.trim();
+            if (!placeLine) return null;
+
+            // Place can be a number, DNS, DNF, or other status
+            if (placeLine.match(/^\d+$/) || placeLine.match(/^(DNS|DNF|DQ)$/i)) {
+                result.place = placeLine;
+                i++;
+            } else {
+                return null;
+            }
+
+            // Line 2: Name
+            const nameLine = lines[i]?.trim();
+            if (!nameLine || !nameLine.match(/^[A-Z]/i)) return null;
+            result.name = nameLine;
+            i++;
+
+            // Lines 3+: Lap times (collect all times until we hit the "Chip:" line)
+            const lapTimes = [];
+            while (i < lines.length) {
+                const line = lines[i].trim();
+
+                // Check if this is the info line with bib/chip/team
+                if (line.match(/^\d+Chip:\s*[CE]/i)) {
+                    // Parse the info line: "79Chip: C79Christian Homelearners Estreams"
+                    const match = line.match(/^(\d+)Chip:\s*([CE]\d+)(.*)$/i);
+                    if (match) {
+                        result.bib = match[1];
+                        // Chip ID is match[2], but we don't have a field for it
+                        result.team = match[3].trim();
+                    }
+                    i++;
+                    break;
+                }
+
+                // Check if this is a lap time
+                if (line.match(/^\d{1,2}:\d{2}\.\d+$/)) {
+                    lapTimes.push(line);
+                    i++;
+                } else {
+                    // Not a time and not the info line, stop parsing
+                    break;
+                }
+            }
+
+            // The final time is the last lap time
+            if (lapTimes.length > 0) {
+                result.time = lapTimes[lapTimes.length - 1];
+            }
+
+            // Only return if we have at least place, name, and time
+            if (result.place && result.name && result.time) {
+                return {
+                    ...result,
+                    nextIndex: i
+                };
+            }
+
+            return null;
+        }
+
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
 
@@ -3950,6 +4241,10 @@ Akey
             if (lowerText.includes('athlete guild') || lowerText.includes('athleteguild')) return 'Athlete Guild';
             if (lowerText.includes('vfp') || lowerText.includes('v fit productions')) return 'VFP';
             if (lowerText.includes('rcc timing')) return 'RCC Timing';
+
+            // Check for GoChip format: Multi-line with "Chip: CXX" or "Chip: EXX"
+            // Example: "79Chip: C79Christian Homelearners Estreams"
+            if (text.match(/\d+Chip:\s*[CE]\d+/i)) return 'GoChip';
 
             // Check for RCC Timing format: Overall, Score, Bib, Name, Class (SR/JR/SO/FR), Time, Team
             if (text.match(/(SR|JR|SO|FR)\s+\d{2}:\d{2}:\d{2}\.\d/m) && text.match(/^1\s+/m)) return 'RCC Timing';
