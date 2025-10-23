@@ -1299,6 +1299,50 @@ Akey
                             }
                         }
                     }
+                } else if (hasBCPattern) {
+                    // Process BC Athletics format
+                    console.log('Processing BC Athletics format');
+
+                    // Look for race headers like "Boys 4k Run CC Junior 4000m"
+                    let lastHeaderCandidate = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for event headers
+                        // Pattern: "Boys 4k Run CC Junior 4000m", "Girls 5k Run CC Senior 5000m"
+                        if (line &&
+                            line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i) &&
+                            line.length < 100) {
+                            // Store as candidate, add it before first result
+                            lastHeaderCandidate = line;
+                        } else if (line && line.match(/^Individual Results$/i)) {
+                            // Skip "Individual Results" header line
+                            continue;
+                        } else {
+                            let result = parseBCFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate.toUpperCase(),
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                    console.log('BC Athletics parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasTeamScoresPattern) {
                     // Process Team Scores format (MileSplit team scores - not individual results)
                     // Format: Race name with "Team Scores", then Place/Team/Points/Scorers/Times data
@@ -1666,50 +1710,6 @@ Akey
                         }
                     }
                     console.log('RMS parsing complete, extracted', extractedResults.length, 'results');
-                } else if (hasBCPattern) {
-                    // Process BC Athletics format
-                    console.log('Processing BC Athletics format');
-
-                    // Look for race headers like "Boys 4k Run CC Junior 4000m"
-                    let lastHeaderCandidate = null;
-
-                    for (let i = 0; i < resultLines.length; i++) {
-                        const line = resultLines[i].trim();
-
-                        // Check for event headers
-                        // Pattern: "Boys 4k Run CC Junior 4000m", "Girls 5k Run CC Senior 5000m"
-                        if (line &&
-                            line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i) &&
-                            line.length < 100) {
-                            // Store as candidate, add it before first result
-                            lastHeaderCandidate = line;
-                        } else if (line && line.match(/^Individual Results$/i)) {
-                            // Skip "Individual Results" header line
-                            continue;
-                        } else {
-                            let result = parseBCFormat(line);
-                            if (result) {
-                                // If we have a header candidate and we're parsing actual results, add the header first
-                                if (lastHeaderCandidate) {
-                                    extractedResults.push({
-                                        isHeader: true,
-                                        headerText: lastHeaderCandidate.toUpperCase(),
-                                        place: '',
-                                        bib: '',
-                                        name: '',
-                                        team: '',
-                                        time: '',
-                                        grade: '',
-                                        points: '',
-                                        pace: ''
-                                    });
-                                    lastHeaderCandidate = null;
-                                }
-                                extractedResults.push(result);
-                            }
-                        }
-                    }
-                    console.log('BC Athletics parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasVFPPattern) {
                     // Process VFP format
                     // Check if there's a header row to determine column positions
