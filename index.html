@@ -1206,6 +1206,13 @@ Akey
                     }
                 }
 
+                // Debug: Log which patterns are detected
+                console.log('Pattern detection complete:',
+                    'BC=' + hasBCPattern,
+                    'TeamScores=' + hasTeamScoresPattern,
+                    'CompTiming=' + hasCompetitiveTimingPattern,
+                    'RaceRoster=' + hasRaceRosterPattern);
+
                 if (hasCompetitiveTimingPattern) {
                     // Process Competitive Timing format
                     // Look for race headers like "Varsity Girls Team Finish List"
