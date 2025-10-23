@@ -4513,14 +4513,15 @@ Akey
 
             // Pattern: starts with optional spaces, number, comma, optional spaces/number, time
             // Time format: MM:SS.S or M:SS.S
-            const match = line.match(/^(\s*)(\d+),(\s+)(\d*)\s+(\d{1,2}:\d{2}\.\d+)\s+(.+)$/);
+            // Note: Team place might be missing, so we use \s* (0 or more) before time
+            const match = line.match(/^(\s*)(\d+),\s+(\d+)?\s*(\d{1,2}:\d{2}\.\d+)\s+(.+)$/);
 
             if (!match) return null;
 
             const place = match[2].trim();
-            const teamPlace = match[4].trim(); // May be empty for non-scoring runners
-            const time = match[5];
-            const rest = match[6]; // Contains name and team
+            const teamPlace = match[3] ? match[3].trim() : ''; // May be empty for non-scoring runners
+            const time = match[4];
+            const rest = match[5]; // Contains name and team
 
             // Parse name and team from the rest
             // Name is in "Last, First" format followed by team
