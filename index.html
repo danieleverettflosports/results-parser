@@ -934,16 +934,29 @@ Akey
                 let hasRMSPattern = false;
                 let hasBCPattern = false;
 
+                // Check for BC Athletics format FIRST (before team scores)
+                // BC Athletics has BOTH "Team Scores" AND "Individual Results" sections
+                const hasBCIndividualResults = lines.some(line => line.match(/^Individual Results$/i));
+                const hasBCEventHeader = lines.some(line => line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i));
+
+                if (hasBCIndividualResults && hasBCEventHeader) {
+                    console.log('BC Athletics format detected via Individual Results and event headers');
+                    hasBCPattern = true;
+                }
+
                 // Check for Team Scores format by looking at ALL lines (not just resultLines)
                 // because the header might be before the startIndex
                 // Only match if we have BOTH the header AND the split pattern or the Place/Team/Points header
-                const hasTeamScoresHeader = lines.some(line => line.match(/Team Scores$/i));
-                const hasSplitPattern = resultLines.some(line => line.match(/\d+\+\d+\+\d+.*1-5 Split/i));
-                const hasTeamScoresColumns = resultLines.some(line => line.match(/^Place\s+Team\s+Points/i));
+                // BUT: Skip if BC format was already detected
+                if (!hasBCPattern) {
+                    const hasTeamScoresHeader = lines.some(line => line.match(/Team Scores$/i));
+                    const hasSplitPattern = resultLines.some(line => line.match(/\d+\+\d+\+\d+.*1-5 Split/i));
+                    const hasTeamScoresColumns = resultLines.some(line => line.match(/^Place\s+Team\s+Points/i));
 
-                if ((hasTeamScoresHeader && hasSplitPattern) || hasTeamScoresColumns) {
-                    console.log('Team Scores format detected via header or split pattern');
-                    hasTeamScoresPattern = true;
+                    if ((hasTeamScoresHeader && hasSplitPattern) || hasTeamScoresColumns) {
+                        console.log('Team Scores format detected via header or split pattern');
+                        hasTeamScoresPattern = true;
+                    }
                 }
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
@@ -1162,21 +1175,6 @@ Akey
                     // Key identifier: Line containing "Chip: C" or "Chip: E" followed by digits/letters
                     if (resultLines[i].match(/^\d+Chip:\s*[CE]\d+/i)) {
                         hasGoChipPattern = true;
-                        break;
-                    }
-                    // BC Athletics format detection
-                    // Pattern: OverallPlace, TeamPlace    Time Name, First              Team
-                    // Example: "  1,  1      13:30.4 Baker, Caleb                   Elgin Park Secondary"
-                    // Example: "  7,         14:27.5 Kaila, Shae                    Lord Tweedsmuir Secondary"
-                    // Key identifiers:
-                    //   - "Individual Results" header
-                    //   - Lines start with: spaces, number, comma, spaces, optional number, time
-                    //   - Name in "Last, First" format
-                    //   - Fixed-width columnar format
-                    if (lines.some(line => line.match(/Individual Results$/i)) &&
-                        resultLines[i].match(/^\s*\d+,\s+\d*\s+\d{1,2}:\d{2}\.\d+\s+[A-Z][a-z]+,\s+[A-Z]/)) {
-                        console.log('BC Athletics pattern matched at line', i, ':', resultLines[i]);
-                        hasBCPattern = true;
                         break;
                     }
                     // Race Management Systems (RMS) format detection
@@ -4520,12 +4518,15 @@ Akey
             // Parse name and team from the rest
             // Name is in "Last, First" format followed by team
             // Example: "Baker, Caleb                   Elgin Park Secondary"
-            const nameMatch = rest.match(/^([A-Z][a-z]+(?:-[A-Z][a-z]+)?),\s+([A-Z][a-z]+(?:\s+\([A-Za-z0-9\s]+\))?)\s+(.+)$/);
+            // Example: "moon, brandon                  Grandview Heights Secondary" (lowercase last name)
+            // Example: "Wang, George (Zhe)             White Rock Christian Academy" (parentheses)
+            // Be flexible with casing and handle multi-word names
+            const nameMatch = rest.match(/^([A-Za-z][A-Za-z\s-]+?),\s+([A-Za-z]+(?:\s+\([A-Za-z0-9\s]+\))?)\s{2,}(.+)$/);
 
             if (!nameMatch) return null;
 
-            const lastName = nameMatch[1];
-            const firstName = nameMatch[2];
+            const lastName = nameMatch[1].trim();
+            const firstName = nameMatch[2].trim();
             const team = nameMatch[3].trim();
 
             const name = `${firstName} ${lastName}`;
