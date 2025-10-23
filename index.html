@@ -4506,17 +4506,21 @@ Akey
 
             // Skip non-data lines
             if (!trimmed ||
-                trimmed.match(/^(Individual|Results|Team|Scores|Boys?|Girls?|Run|CC|Championship|_+)/i) ||
+                trimmed.match(/^(Individual|Results|Team|Scores|Boys?|Girls?|Run|CC|Championship|_+|<pre>|<\/pre>)/i) ||
                 trimmed.length < 20) {
                 return null;
             }
 
             // Pattern: starts with optional spaces, number, comma, optional spaces/number, time
             // Time format: MM:SS.S or M:SS.S
-            // Note: Team place might be missing, so we use \s* (0 or more) before time
-            const match = line.match(/^(\s*)(\d+),\s+(\d+)?\s*(\d{1,2}:\d{2}\.\d+)\s+(.+)$/);
+            // Note: Team place must be followed by space(s), OR there's just spaces before time
+            // Use lookahead to ensure team place (if present) is followed by space
+            const match = line.match(/^(\s*)(\d+),\s+(?:(\d+)\s+)?\s*(\d{1,2}:\d{2}\.\d+)\s+(.+)$/);
 
-            if (!match) return null;
+            if (!match) {
+                console.log('BC format: No match for line:', line.substring(0, 80));
+                return null;
+            }
 
             const place = match[2].trim();
             const teamPlace = match[3] ? match[3].trim() : ''; // May be empty for non-scoring runners
@@ -4531,7 +4535,10 @@ Akey
             // Be flexible with casing and handle multi-word names
             const nameMatch = rest.match(/^([A-Za-z][A-Za-z\s-]+?),\s+([A-Za-z]+(?:\s+\([A-Za-z0-9\s]+\))?)\s{2,}(.+)$/);
 
-            if (!nameMatch) return null;
+            if (!nameMatch) {
+                console.log('BC format: Name parse failed for rest:', rest.substring(0, 60));
+                return null;
+            }
 
             const lastName = nameMatch[1].trim();
             const firstName = nameMatch[2].trim();
