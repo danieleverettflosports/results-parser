@@ -932,6 +932,7 @@ Akey
                 let hasAthleticNetPattern = false;
                 let hasGoChipPattern = false;
                 let hasRMSPattern = false;
+                let hasBCPattern = false;
 
                 // Check for Team Scores format by looking at ALL lines (not just resultLines)
                 // because the header might be before the startIndex
@@ -1161,6 +1162,21 @@ Akey
                     // Key identifier: Line containing "Chip: C" or "Chip: E" followed by digits/letters
                     if (resultLines[i].match(/^\d+Chip:\s*[CE]\d+/i)) {
                         hasGoChipPattern = true;
+                        break;
+                    }
+                    // BC Athletics format detection
+                    // Pattern: OverallPlace, TeamPlace    Time Name, First              Team
+                    // Example: "  1,  1      13:30.4 Baker, Caleb                   Elgin Park Secondary"
+                    // Example: "  7,         14:27.5 Kaila, Shae                    Lord Tweedsmuir Secondary"
+                    // Key identifiers:
+                    //   - "Individual Results" header
+                    //   - Lines start with: spaces, number, comma, spaces, optional number, time
+                    //   - Name in "Last, First" format
+                    //   - Fixed-width columnar format
+                    if (lines.some(line => line.match(/Individual Results$/i)) &&
+                        resultLines[i].match(/^\s*\d+,\s+\d*\s+\d{1,2}:\d{2}\.\d+\s+[A-Z][a-z]+,\s+[A-Z]/)) {
+                        console.log('BC Athletics pattern matched at line', i, ':', resultLines[i]);
+                        hasBCPattern = true;
                         break;
                     }
                     // Race Management Systems (RMS) format detection
@@ -1638,6 +1654,50 @@ Akey
                         }
                     }
                     console.log('RMS parsing complete, extracted', extractedResults.length, 'results');
+                } else if (hasBCPattern) {
+                    // Process BC Athletics format
+                    console.log('Processing BC Athletics format');
+
+                    // Look for race headers like "Boys 4k Run CC Junior 4000m"
+                    let lastHeaderCandidate = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for event headers
+                        // Pattern: "Boys 4k Run CC Junior 4000m", "Girls 5k Run CC Senior 5000m"
+                        if (line &&
+                            line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i) &&
+                            line.length < 100) {
+                            // Store as candidate, add it before first result
+                            lastHeaderCandidate = line;
+                        } else if (line && line.match(/^Individual Results$/i)) {
+                            // Skip "Individual Results" header line
+                            continue;
+                        } else {
+                            let result = parseBCFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate.toUpperCase(),
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                    console.log('BC Athletics parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasVFPPattern) {
                     // Process VFP format
                     // Check if there's a header row to determine column positions
@@ -4423,6 +4483,65 @@ Akey
             };
         }
 
+        function parseBCFormat(line) {
+            // BC Athletics format (British Columbia championships)
+            // Pattern: OverallPlace, TeamPlace    Time Name, First              Team
+            // Example: "  1,  1      13:30.4 Baker, Caleb                   Elgin Park Secondary"
+            // Example: "  7,         14:27.5 Kaila, Shae                    Lord Tweedsmuir Secondary"
+            // Example: " 10,  8      22:05.6 Young, Isla                    White Rock Christian Academy"
+            // Fixed-width format:
+            //   - Columns 1-3: Overall place (right-aligned)
+            //   - Column 4: Comma
+            //   - Columns 5-8: Team place/score (may be blank for non-scoring)
+            //   - Columns 9+: Time (variable position)
+            //   - After time: Name in "Last, First" format
+            //   - After name: Team name (padded to right)
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines
+            if (!trimmed ||
+                trimmed.match(/^(Individual|Results|Team|Scores|Boys?|Girls?|Run|CC|Championship|_+)/i) ||
+                trimmed.length < 20) {
+                return null;
+            }
+
+            // Pattern: starts with optional spaces, number, comma, optional spaces/number, time
+            // Time format: MM:SS.S or M:SS.S
+            const match = line.match(/^(\s*)(\d+),(\s+)(\d*)\s+(\d{1,2}:\d{2}\.\d+)\s+(.+)$/);
+
+            if (!match) return null;
+
+            const place = match[2].trim();
+            const teamPlace = match[4].trim(); // May be empty for non-scoring runners
+            const time = match[5];
+            const rest = match[6]; // Contains name and team
+
+            // Parse name and team from the rest
+            // Name is in "Last, First" format followed by team
+            // Example: "Baker, Caleb                   Elgin Park Secondary"
+            const nameMatch = rest.match(/^([A-Z][a-z]+(?:-[A-Z][a-z]+)?),\s+([A-Z][a-z]+(?:\s+\([A-Za-z0-9\s]+\))?)\s+(.+)$/);
+
+            if (!nameMatch) return null;
+
+            const lastName = nameMatch[1];
+            const firstName = nameMatch[2];
+            const team = nameMatch[3].trim();
+
+            const name = `${firstName} ${lastName}`;
+
+            return {
+                place: place,
+                bib: '',
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: teamPlace, // Use team place as points
+                pace: ''
+            };
+        }
+
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
 
@@ -4431,6 +4550,16 @@ Akey
                 text.match(/Place\s+Team\s+Points/i) &&
                 text.match(/\d+\s+\+.*1-5 Split/)) {
                 return 'MileSplit Team Scores';
+            }
+
+            // Check for BC Athletics format (British Columbia)
+            // Key identifiers: "Individual Results" header
+            //                  Lines with pattern: number, comma, optional number, time, name (Last, First)
+            //                  Event names like "Boys 4k Run CC Junior 4000m"
+            if (lowerText.includes('individual results') &&
+                text.match(/^\s*\d+,\s+\d*\s+\d{1,2}:\d{2}\.\d+\s+[A-Z][a-z]+,\s+[A-Z]/m) &&
+                text.match(/(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i)) {
+                return 'BC Athletics';
             }
 
             // Check for Race Management Systems (RMS) format
