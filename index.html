@@ -931,6 +931,7 @@ Akey
                 let hasHyTekPattern = false;
                 let hasAthleticNetPattern = false;
                 let hasGoChipPattern = false;
+                let hasRMSPattern = false;
 
                 // Check for Team Scores format by looking at ALL lines (not just resultLines)
                 // because the header might be before the startIndex
@@ -971,7 +972,9 @@ Akey
                     // Pace can be at end or followed by year/grade
                     // IMPORTANT: Check BEFORE RaceResult since both formats have Place, Score, Bib pattern
                     // but VFP has /M in pace while RaceResult doesn't
-                    if (resultLines[i].match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M(\s|$)/i)) {
+                    // ALSO: Check for RMS first, since RMS also has /M in pace but has distinct footer
+                    if (!lines.some(line => line.match(/Results By Race Management Systems/i)) &&
+                        resultLines[i].match(/^1\s+(\d+|\(.*\)).*\d{1,2}:\d{2}\/M(\s|$)/i)) {
                         hasVFPPattern = true;
                         break;
                     }
@@ -1159,6 +1162,26 @@ Akey
                     if (resultLines[i].match(/^\d+Chip:\s*[CE]\d+/i)) {
                         hasGoChipPattern = true;
                         break;
+                    }
+                    // Race Management Systems (RMS) format detection
+                    // Pattern: Place Score Bib No Name Team Grade Time Pace [Class] [Qualifier]
+                    // Example: "1 1 684 Cooper Ratliff Mason 11 17:13.64 5:33/M TM"
+                    // Example: "3 (< 5) 247 Colton Vrazel Danbury 12 17:17.93 5:35/M IND"
+                    // Key identifiers:
+                    //   - Footer: "Results By Race Management Systems, Inc."
+                    //   - Header: "Overall Finish List"
+                    //   - Score can be number or "(< 5)"
+                    //   - Pace format: "M:SS/M"
+                    // Check footer signature first
+                    if (lines.some(line => line.match(/Results By Race Management Systems/i))) {
+                        console.log('RMS footer signature found');
+                        // Look for data pattern: Place, Score (or "< 5"), Bib, Name, Team, Grade, Time, Pace
+                        // Check any line that has the RMS data pattern (not just starting with "1")
+                        if (resultLines[i].match(/^\d+\s+(\d+|\(<?\s*\d+\))\s+\d{3,4}\s+\w+.*\d{1,2}:\d{2}\.\d+\s+\d{1,2}:\d{2}\/M/i)) {
+                            console.log('RMS pattern matched at line', i, ':', resultLines[i]);
+                            hasRMSPattern = true;
+                            break;
+                        }
                     }
                 }
 
@@ -1571,6 +1594,50 @@ Akey
                             extractedResults.push(result);
                         }
                     }
+                } else if (hasRMSPattern) {
+                    // Process Race Management Systems (RMS) format
+                    console.log('Processing RMS format');
+
+                    // Look for race headers like "2A Boys" or "Varsity Girls"
+                    let lastHeaderCandidate = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for race category headers (like "2A Boys")
+                        // Pattern: "2A Boys", "Varsity Girls", etc.
+                        if (line &&
+                            line.match(/^(\d+A|Varsity|JV|Freshman|Sophomore)?\s*(Boys?|Girls?|Men|Women)$/i) &&
+                            line.length < 50) {
+                            // Store as candidate, add it before first result
+                            lastHeaderCandidate = line;
+                        } else if (line && line.match(/^Overall Finish List$/i)) {
+                            // Overall Finish List can also be a header
+                            lastHeaderCandidate = line;
+                        } else {
+                            let result = parseRMSFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate.toUpperCase(),
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                    console.log('RMS parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasVFPPattern) {
                     // Process VFP format
                     // Check if there's a header row to determine column positions
@@ -4202,6 +4269,160 @@ Akey
             return null;
         }
 
+        function parseRMSFormat(line) {
+            // Race Management Systems (RMS) format
+            // Pattern: Place Score Bib No Name Team Grade Time Pace [Class] [Qualifier]
+            // Example: "1 1 684 Cooper Ratliff Mason 11 17:13.64 5:33/M TM"
+            // Example: "3 (< 5) 247 Colton Vrazel Danbury 12 17:17.93 5:35/M IND"
+            // Example: "6 5 682 Caden Klingelhefer Mason 11 18:01.25 5:49/M TM"
+            // Example: "8 (< 5) 403 Ty Szymanski Ganado 18:08.30 5:51/M IND"
+            // Score can be: number, "(< 5)", or other variations
+            // Grade can be: 9, 10, 11, 12, Fr, So, or blank
+            // Last columns may have "TM" (team) or "IND" (individual) markers
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines
+            if (!trimmed || trimmed.match(/^(Place|Score|Bib|No|Name|Team|Grade|Time|Pace|Class|Qualifier|---+|Results By)/i)) {
+                return null;
+            }
+
+            // Split by multiple spaces (typically 2+)
+            let parts = trimmed.split(/\s{2,}/).map(p => p.trim()).filter(p => p);
+
+            // If we don't have enough parts with multi-space delimiter, try splitting by single spaces
+            // This handles cases where some columns run together
+            if (parts.length < 7) {
+                parts = trimmed.split(/\s+/);
+            }
+
+            // Need at least: Place, Score, Bib, Name (First Last), Team, Grade, Time, Pace (8+ fields)
+            if (parts.length < 8) return null;
+
+            // First part should be place number
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Second part is score (can be number or "(< 5)" or other variations)
+            let score = parts[1];
+            let scoreIndex = 1;
+
+            // Handle multi-word score like "( < 5 )" by combining parts
+            if (score === '(' || score.startsWith('(')) {
+                let combined = score;
+                let combineIndex = scoreIndex + 1;
+                // Combine until we find closing paren
+                while (combineIndex < parts.length && !combined.includes(')')) {
+                    combined += ' ' + parts[combineIndex];
+                    combineIndex++;
+                }
+                if (combined.includes(')')) {
+                    score = combined.replace(/\s+/g, ''); // Remove internal spaces
+                    // Adjust parts array
+                    parts = [parts[0], score, ...parts.slice(combineIndex)];
+                }
+            }
+
+            // Third part should be bib (3-4 digits typically)
+            const bib = parts[2];
+            if (!bib.match(/^\d{1,4}$/)) return null;
+
+            // Find the time - it's in format MM:SS.SS and occurs before the pace
+            // Pace is in format M:SS/M
+            let timeIndex = -1;
+            let paceIndex = -1;
+
+            // Search from the end for pace (has /M)
+            for (let i = parts.length - 1; i >= 3; i--) {
+                if (parts[i].match(/^\d{1,2}:\d{2}\/M$/i)) {
+                    paceIndex = i;
+                    break;
+                }
+            }
+
+            // Time is right before pace (or search for it if no pace found)
+            if (paceIndex !== -1) {
+                timeIndex = paceIndex - 1;
+            } else {
+                // No pace found, look for time format MM:SS.SS
+                for (let i = parts.length - 1; i >= 3; i--) {
+                    if (parts[i].match(/^\d{1,2}:\d{2}\.\d+$/)) {
+                        timeIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            if (timeIndex === -1) return null;
+
+            const time = parts[timeIndex];
+            const pace = paceIndex !== -1 ? parts[paceIndex] : '';
+
+            // Grade is right before time
+            // Grade can be: 9, 10, 11, 12, Fr, So, Jr, Sr, or missing
+            let gradeIndex = timeIndex - 1;
+            let grade = '';
+
+            if (gradeIndex >= 3 && parts[gradeIndex].match(/^([6-9]|1[0-2]|Fr|So|Jr|Sr)$/i)) {
+                grade = parts[gradeIndex];
+            } else {
+                // No grade, so grade index moves up
+                gradeIndex = timeIndex; // Adjust for missing grade
+            }
+
+            // Name is parts[3] and parts[4] (First Last)
+            // Team is everything between name and grade
+            let nameParts = [];
+            let teamStartIndex = 3;
+
+            // Name is typically 2 parts (first and last name)
+            if (parts[3] && parts[3].match(/^[A-Z][a-z]/)) {
+                nameParts.push(parts[3]);
+                if (parts[4] && parts[4].match(/^[A-Z][a-z]/)) {
+                    nameParts.push(parts[4]);
+                    teamStartIndex = 5;
+                } else {
+                    teamStartIndex = 4;
+                }
+            } else {
+                return null;
+            }
+
+            const name = nameParts.join(' ');
+
+            // Team is everything between name end and grade
+            let teamParts = [];
+            for (let i = teamStartIndex; i < gradeIndex; i++) {
+                // Skip TM and IND markers
+                if (parts[i] !== 'TM' && parts[i] !== 'IND') {
+                    teamParts.push(parts[i]);
+                }
+            }
+
+            const team = teamParts.join(' ');
+
+            // Extract score value
+            let scoreValue = '';
+            if (score && score.match(/\d+/)) {
+                // Extract the number from patterns like "(< 5)" or "1"
+                const scoreMatch = score.match(/\d+/);
+                if (scoreMatch && !score.includes('<') && !score.includes('>')) {
+                    scoreValue = scoreMatch[0];
+                }
+            }
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: grade,
+                points: scoreValue,
+                pace: pace
+            };
+        }
+
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
 
@@ -4210,6 +4431,15 @@ Akey
                 text.match(/Place\s+Team\s+Points/i) &&
                 text.match(/\d+\s+\+.*1-5 Split/)) {
                 return 'MileSplit Team Scores';
+            }
+
+            // Check for Race Management Systems (RMS) format
+            // Key identifiers: "Results By Race Management Systems, Inc." footer
+            //                  "Overall Finish List" header
+            //                  Pace format with /M suffix (e.g., "5:33/M")
+            if (lowerText.includes('results by race management systems') ||
+                (lowerText.includes('overall finish list') && text.match(/\d{1,2}:\d{2}\/M/i))) {
+                return 'Race Management Systems (RMS)';
             }
 
             // Check for Competitive Timing format: Has "Team Finish List"
