@@ -825,10 +825,17 @@ Akey
                 if (startIndex === -1) {
                     // For team scores format, we don't need a traditional start index
                     // Check if this might be team scores data
+                    // BUT: Check for BC Athletics first (which also has "Team Scores" but also "Individual Results")
+                    const hasBCIndividualResults = lines.some(line => line.match(/^Individual Results$/i));
+                    const hasBCEventHeader = lines.some(line => line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i));
                     const hasTeamScoresHeader = lines.some(line => line.match(/Team Scores$/i));
                     const hasSplitPattern = lines.some(line => line.match(/1-5 Split/i));
 
-                    if (hasTeamScoresHeader || hasSplitPattern) {
+                    if (hasBCIndividualResults && hasBCEventHeader) {
+                        // BC Athletics format - set startIndex to 0
+                        console.log('Detected BC Athletics format, setting startIndex to 0');
+                        startIndex = 0;
+                    } else if (hasTeamScoresHeader || hasSplitPattern) {
                         console.log('Detected team scores format, setting startIndex to 0');
                         startIndex = 0;
                     } else {
