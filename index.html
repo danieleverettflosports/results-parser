@@ -1188,12 +1188,13 @@ Akey
                     // Colorado format detection
                     // Pattern: Place Name (TEAM) Grade Time
                     // Example: "1            RILEY COLE (CHEYENNE MOUNTAIN HIG)                    SR            00:18:07.63"
+                    // Can be tab-delimited: "1\t\t\tRILEY COLE (CHEYENNE MOUNTAIN HIG)\t\t\t\t\tSR\t\t\t00:18:07.63"
                     // Key identifiers:
                     //   - ALL CAPS names (FIRST LAST format)
                     //   - Team/school in parentheses
                     //   - Grade (FR/SO/JR/SR)
                     //   - Time format: HH:MM:SS.SS with leading zeros
-                    if (resultLines[i].match(/^\d+\s+[A-Z][A-Z\s'-]+?\s*\([^)]+\)\s+(FR|SO|JR|SR)\s+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
+                    if (resultLines[i].match(/^\d+[\s\t]+[A-Z][A-Z\s'-]+?\s*\([^)]+\)[\s\t]+(FR|SO|JR|SR)[\s\t]+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
                         console.log('Colorado pattern matched at line', i, ':', resultLines[i]);
                         hasColoradoPattern = true;
                         break;
@@ -4611,8 +4612,8 @@ Akey
             }
 
             // Pattern: Place, Name (ALL CAPS), Team in parens, Grade, Time
-            // Use a more flexible regex that handles variable spacing
-            const match = line.match(/^(\d+)\s+([A-Z][A-Z\s'-]+?)\s*\(([^)]+)\)\s+(FR|SO|JR|SR)\s+(\d{2}:\d{2}:\d{2}\.\d{2})\s*$/);
+            // Use a more flexible regex that handles variable spacing and tabs
+            const match = line.match(/^(\d+)[\s\t]+([A-Z][A-Z\s'-]+?)\s*\(([^)]+)\)[\s\t]+(FR|SO|JR|SR)[\s\t]+(\d{2}:\d{2}:\d{2}\.\d{2})\s*$/);
 
             if (!match) return null;
 
@@ -4659,7 +4660,8 @@ Akey
             // Check for Colorado format
             // Key identifiers: ALL CAPS names, team in parentheses, FR/SO/JR/SR grade, HH:MM:SS.SS time
             // Example: "1            RILEY COLE (CHEYENNE MOUNTAIN HIG)                    SR            00:18:07.63"
-            if (text.match(/^\d+\s+[A-Z][A-Z\s'-]+\([A-Z\s]+\)\s+(FR|SO|JR|SR)\s+\d{2}:\d{2}:\d{2}\.\d{2}/m)) {
+            // Can be tab-delimited: "1\t\t\tRILEY COLE (CHEYENNE MOUNTAIN HIG)\t\t\t\t\tSR\t\t\t00:18:07.63"
+            if (text.match(/^\d+[\s\t]+[A-Z][A-Z\s'-]+\([A-Z\s]+\)[\s\t]+(FR|SO|JR|SR)[\s\t]+\d{2}:\d{2}:\d{2}\.\d{2}/m)) {
                 return 'Colorado';
             }
 
