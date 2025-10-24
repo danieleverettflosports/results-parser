@@ -940,6 +940,7 @@ Akey
                 let hasGoChipPattern = false;
                 let hasRMSPattern = false;
                 let hasBCPattern = false;
+                let hasColoradoPattern = false;
 
                 // Check for BC Athletics format FIRST (before team scores)
                 // BC Athletics has BOTH "Team Scores" AND "Individual Results" sections
@@ -1184,6 +1185,19 @@ Akey
                         hasGoChipPattern = true;
                         break;
                     }
+                    // Colorado format detection
+                    // Pattern: Place Name (TEAM) Grade Time
+                    // Example: "1            RILEY COLE (CHEYENNE MOUNTAIN HIG)                    SR            00:18:07.63"
+                    // Key identifiers:
+                    //   - ALL CAPS names (FIRST LAST format)
+                    //   - Team/school in parentheses
+                    //   - Grade (FR/SO/JR/SR)
+                    //   - Time format: HH:MM:SS.SS with leading zeros
+                    if (resultLines[i].match(/^\d+\s+[A-Z][A-Z\s-]+\([A-Z\s]+\)\s+(FR|SO|JR|SR)\s+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
+                        console.log('Colorado pattern matched at line', i, ':', resultLines[i]);
+                        hasColoradoPattern = true;
+                        break;
+                    }
                     // Race Management Systems (RMS) format detection
                     // Pattern: Place Score Bib No Name Team Grade Time Pace [Class] [Qualifier]
                     // Example: "1 1 684 Cooper Ratliff Mason 11 17:13.64 5:33/M TM"
@@ -1209,6 +1223,7 @@ Akey
                 // Debug: Log which patterns are detected
                 console.log('Pattern detection complete:',
                     'BC=' + hasBCPattern,
+                    'Colorado=' + hasColoradoPattern,
                     'TeamScores=' + hasTeamScoresPattern,
                     'CompTiming=' + hasCompetitiveTimingPattern,
                     'RaceRoster=' + hasRaceRosterPattern);
@@ -1299,6 +1314,17 @@ Akey
                             }
                         }
                     }
+                } else if (hasColoradoPattern) {
+                    // Process Colorado format
+                    console.log('Processing Colorado format');
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        let result = parseColoradoFormat(resultLines[i]);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                    console.log('Colorado parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasBCPattern) {
                     // Process BC Athletics format
                     console.log('Processing BC Athletics format');
@@ -4565,6 +4591,61 @@ Akey
             };
         }
 
+        function parseColoradoFormat(line) {
+            // Colorado format (appears to be Colorado high school cross country)
+            // Pattern: Place Name (TEAM) Grade Time
+            // Example: "1            RILEY COLE (CHEYENNE MOUNTAIN HIG)                    SR            00:18:07.63"
+            // Example: "202            GIOVONNI HENRY (SAND CREEK HIGH SCHOOL)                    SO            00:35:34.27"
+            // Fixed-width format with:
+            //   - Place number (left-aligned, variable width)
+            //   - Name in ALL CAPS (FIRST LAST or FIRST MIDDLE LAST format)
+            //   - Team/school in parentheses (abbreviated)
+            //   - Grade (FR/SO/JR/SR)
+            //   - Time (HH:MM:SS.SS format with leading zeros)
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines
+            if (!trimmed || trimmed.length < 30) {
+                return null;
+            }
+
+            // Pattern: Place, Name (ALL CAPS), Team in parens, Grade, Time
+            // Use a more flexible regex that handles variable spacing
+            const match = line.match(/^(\d+)\s+([A-Z][A-Z\s'-]+)\(([^)]+)\)\s+(FR|SO|JR|SR)\s+(\d{2}:\d{2}:\d{2}\.\d{2})\s*$/);
+
+            if (!match) return null;
+
+            const place = match[1].trim();
+            const name = match[2].trim(); // Already in FIRST LAST format, all caps
+            const team = match[3].trim();
+            const grade = match[4];
+            const time = match[5];
+
+            // Convert ALL CAPS name to Title Case for better readability
+            const nameParts = name.split(/\s+/);
+            const titleCaseName = nameParts.map(part => {
+                // Handle hyphenated names
+                if (part.includes('-')) {
+                    return part.split('-').map(p =>
+                        p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()
+                    ).join('-');
+                }
+                return part.charAt(0).toUpperCase() + part.slice(1).toLowerCase();
+            }).join(' ');
+
+            return {
+                place: place,
+                bib: '',
+                name: titleCaseName,
+                team: team,
+                time: time,
+                grade: grade,
+                points: '',
+                pace: ''
+            };
+        }
+
         function detectPlatform(text) {
             const lowerText = text.toLowerCase();
 
@@ -4573,6 +4654,13 @@ Akey
                 text.match(/Place\s+Team\s+Points/i) &&
                 text.match(/\d+\s+\+.*1-5 Split/)) {
                 return 'MileSplit Team Scores';
+            }
+
+            // Check for Colorado format
+            // Key identifiers: ALL CAPS names, team in parentheses, FR/SO/JR/SR grade, HH:MM:SS.SS time
+            // Example: "1            RILEY COLE (CHEYENNE MOUNTAIN HIG)                    SR            00:18:07.63"
+            if (text.match(/^\d+\s+[A-Z][A-Z\s'-]+\([A-Z\s]+\)\s+(FR|SO|JR|SR)\s+\d{2}:\d{2}:\d{2}\.\d{2}/m)) {
+                return 'Colorado';
             }
 
             // Check for BC Athletics format (British Columbia)
