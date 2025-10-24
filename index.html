@@ -1194,6 +1194,7 @@ Akey
                     //   - Team/school in parentheses
                     //   - Grade (FR/SO/JR/SR)
                     //   - Time format: HH:MM:SS.SS with leading zeros
+                    if (i < 5) console.log('Testing Colorado pattern on line', i, ':', JSON.stringify(resultLines[i].substring(0, 100)));
                     if (resultLines[i].match(/^\d+[\s\t]+[A-Z][A-Z\s'-]+\([^)]+\)[\s\t]+(FR|SO|JR|SR)[\s\t]+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
                         console.log('Colorado pattern matched at line', i, ':', resultLines[i]);
                         hasColoradoPattern = true;
