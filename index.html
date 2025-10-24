@@ -1193,7 +1193,7 @@ Akey
                     //   - Team/school in parentheses
                     //   - Grade (FR/SO/JR/SR)
                     //   - Time format: HH:MM:SS.SS with leading zeros
-                    if (resultLines[i].match(/^\d+\s+[A-Z][A-Z\s-]+\([A-Z\s]+\)\s+(FR|SO|JR|SR)\s+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
+                    if (resultLines[i].match(/^\d+\s+[A-Z][A-Z\s'-]+?\s*\([^)]+\)\s+(FR|SO|JR|SR)\s+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
                         console.log('Colorado pattern matched at line', i, ':', resultLines[i]);
                         hasColoradoPattern = true;
                         break;
@@ -4612,7 +4612,7 @@ Akey
 
             // Pattern: Place, Name (ALL CAPS), Team in parens, Grade, Time
             // Use a more flexible regex that handles variable spacing
-            const match = line.match(/^(\d+)\s+([A-Z][A-Z\s'-]+)\(([^)]+)\)\s+(FR|SO|JR|SR)\s+(\d{2}:\d{2}:\d{2}\.\d{2})\s*$/);
+            const match = line.match(/^(\d+)\s+([A-Z][A-Z\s'-]+?)\s*\(([^)]+)\)\s+(FR|SO|JR|SR)\s+(\d{2}:\d{2}:\d{2}\.\d{2})\s*$/);
 
             if (!match) return null;
 
