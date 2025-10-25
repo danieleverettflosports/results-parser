@@ -1065,6 +1065,20 @@ Akey
                             break;
                         }
                     }
+                    // Webscorer Table format: from HTML table (multi-line per runner)
+                    // Line 1: "1    969    Isaiah Blevins"
+                    // Line 2: "Guthrie High School - 12"
+                    // Line 3: "5A Boys    M    Show all race timer lapsShow    16:11.79    -"
+                    if (i + 2 < resultLines.length) {
+                        const line1Parts = resultLines[i].split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
+                        if (line1Parts.length >= 3 &&
+                            line1Parts[0] === '1' &&
+                            line1Parts[1].match(/^\d{3,5}$/) &&
+                            resultLines[i + 2].match(/Show all race timer laps.*\d{1,2}:\d{2}\.\d{2}/i)) {
+                            hasWebscorerPattern = true;
+                            break;
+                        }
+                    }
                     // Oklahoma format: "1 99 Tatum Penland 10 Bixby High School 1 00:19:15 6:12"
                     // Pattern: Place, Bib, Name, Grade (9-12), Team, Score, Time, Pace
                     if (resultLines[i].match(/^1\s+\d{1,5}\s+\w+\s+\w+\s+(9|10|11|12)\s+\w+.*\s+\d+\s+\d{2}:\d{2}:\d{2}?\s+\d{1,2}:\d{2}/i)) {
@@ -2750,10 +2764,16 @@ Akey
         }
 
         function parseWebscorerFormat(lines, index) {
-            // Format: Place, Bib, Name on one line, Team-Grade on next line, Category, Gender, Time, Difference
+            // Two formats supported:
+            // Format 1 (original): Place, Bib, Name on one line, Team-Grade on next line, Category, Gender, Time, Difference
             // Line 1: "1    7072    Boyd Hamby"
             // Line 2: "Mcloud - 12"
             // Line 3: "High School Boys    M    16:49.62    -"
+            //
+            // Format 2 (HTML table): Place, Bib, Name on one line, Team - Grade on next, Category Gender ...Show... Time Diff
+            // Line 1: "1    969    Isaiah Blevins"
+            // Line 2: "Guthrie High School - 12"
+            // Line 3: "5A Boys    M    Show all race timer lapsShow    16:11.79    -"
 
             if (index + 2 >= lines.length) return null;
 
@@ -2771,11 +2791,11 @@ Akey
             const bib = parts1[1];
             if (!bib.match(/^\d{1,5}$/)) return null;
 
-            const name = parts1[2];
+            const name = parts1.slice(2).join(' '); // Handle names with multiple parts
             if (!name || name.length === 0) return null;
 
             // Parse line 2: Team - Grade
-            // Example: "Mcloud - 12" or "Prague - 11"
+            // Example: "Mcloud - 12" or "Guthrie High School - 12"
             const teamGradeMatch = line2.match(/^(.+?)\s*-\s*(\d{1,2})\s*$/);
             if (!teamGradeMatch) return null;
 
@@ -2783,13 +2803,14 @@ Akey
             const grade = teamGradeMatch[2];
 
             // Parse line 3: Category, Gender, Time, Difference
-            const parts3 = line3.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
-            if (parts3.length < 2) return null;
+            // Remove "Show all race timer lapsShow" text if present
+            const line3Clean = line3.replace(/Show all race timer laps(Show)?/gi, '').trim();
+            const parts3 = line3Clean.split(/\t|\s{2,}/).map(p => p.trim()).filter(p => p);
 
             // Time format: MM:SS.XX
             let time = null;
             for (let i = 0; i < parts3.length; i++) {
-                if (parts3[i].match(/^\d{1,2}:\d{2}\.\d{2}$/)) {
+                if (parts3[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
                     time = parts3[i];
                     break;
                 }
