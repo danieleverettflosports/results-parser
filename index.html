@@ -1076,7 +1076,7 @@ Akey
                     }
                     // Webscorer Table format: from HTML table (multi-line per runner)
                     // Line 0: "1    969    Isaiah Blevins"
-                    // Line 1: "Guthrie High School - 12"
+                    // Line 1: "Guthrie High School - 12" or "John Marshal" (no grade)
                     // Line 2: "5A Boys    M"
                     // Line 3: "Show all race timer lapsShow"
                     // Line 4: "16:11.79    -"
@@ -1085,7 +1085,7 @@ Akey
                         if (line1Parts.length >= 3 &&
                             line1Parts[0] === '1' &&
                             line1Parts[1].match(/^\d{3,5}$/) &&
-                            resultLines[i + 1].match(/^[A-Za-z\s]+-\s*\d{1,2}\s*$/) &&
+                            (resultLines[i + 1].match(/^[A-Za-z\s]+-\s*\d{1,2}\s*$/) || resultLines[i + 1].match(/^[A-Za-z\s]+$/)) &&
                             resultLines[i + 3].match(/Show all race timer laps/i) &&
                             resultLines[i + 4].match(/\d{1,2}:\d{2}\.\d{1,2}/)) {
                             hasWebscorerPattern = true;
@@ -2808,13 +2808,19 @@ Akey
             const name = parts1.slice(2).join(' '); // Handle names with multiple parts
             if (!name || name.length === 0) return null;
 
-            // Parse line 2: Team - Grade
-            // Example: "Mcloud - 12" or "Guthrie High School - 12"
+            // Parse line 2: Team - Grade (or just Team if grade is missing)
+            // Example: "Mcloud - 12" or "Guthrie High School - 12" or "John Marshal"
             const teamGradeMatch = line2.match(/^(.+?)\s*-\s*(\d{1,2})\s*$/);
-            if (!teamGradeMatch) return null;
+            let team, grade;
 
-            const team = teamGradeMatch[1].trim();
-            const grade = teamGradeMatch[2];
+            if (teamGradeMatch) {
+                team = teamGradeMatch[1].trim();
+                grade = teamGradeMatch[2];
+            } else {
+                // No grade specified, just team name
+                team = line2.trim();
+                grade = '';
+            }
 
             // Check if this is Format 2 (5-line) by looking for "Show all" on line 3
             const isFormat2 = index + 4 < lines.length && lines[index + 3].match(/Show all race timer laps/i);
