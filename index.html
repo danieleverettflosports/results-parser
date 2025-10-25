@@ -734,6 +734,15 @@ Akey
                             break;
                         }
                     }
+                    // Webscorer format: "1    969    Isaiah Blevins" (Place, Bib, Name)
+                    // Followed by "Team - Grade" on next line
+                    // Key: 3-5 digit bib after place, name on same line, then team-grade on next line
+                    if (line.match(/^1(\t|\s+)\d{3,5}(\t|\s+)[A-Z][a-z]+\s+[A-Z]/) &&
+                        i + 1 < lines.length &&
+                        lines[i + 1].match(/\s*-\s*\d{1,2}\s*$/)) {
+                        startIndex = i;
+                        break;
+                    }
                     // RunSignup format: "1    580" (place + bib), followed by initial on next line
                     // Check if this line is "1" + bib number, and next few lines have the name pattern
                     if (line.match(/^1(\t|\s+)\d{3,4}$/) && i + 3 < lines.length) {
