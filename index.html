@@ -968,6 +968,10 @@ Akey
                 }
 
                 for (let i = 0; i < Math.min(resultLines.length, 30); i++) {
+                    if (i === 0) {
+                        console.log('FORMAT DETECTION LOOP STARTED, checking', Math.min(resultLines.length, 30), 'lines');
+                        console.log('First line for testing:', JSON.stringify(resultLines[0]));
+                    }
                     // Competitive Timing format detection
                     // Pattern: Place, Bib, Name, Year, Team Name, Score, Team Score, Team Place, Clock Time, Pace
                     // Key identifier: Has "Team Finish List" in header and score column with special values like "< 5", "> 7", "(number)"
@@ -1070,8 +1074,8 @@ Akey
                     // RCC Timing format: "1 1 353 Noah Bontrager SR 00:15:21.54 Westview"
                     // Middle school: "1 1 4788 Emmett Glenn 8th 00:10:11.64 Bellmont"
                     // Pattern: Overall, Score, Bib, Name, Class (SR/JR/SO/FR or 6th/7th/8th or 6/7/8 or missing), Time, Team
-                    // Look for Class marker and time format (with optional 00: prefix)
-                    if (resultLines[i].match(/(SR|JR|SO|FR|[678]th?|1[0-2]th?)\s+\d{2}:\d{2}:\d{2}\.\d/i)) {
+                    // Key: Starts with place, score, bib (3 numbers) before name
+                    if (resultLines[i].match(/^1[\s\t]+\d+[\s\t]+\d+[\s\t]+\w+.*(SR|JR|SO|FR|[678]th?|1[0-2]th?)[\s\t]+\d{2}:\d{2}:\d{2}\.\d/i)) {
                         hasRCCPattern = true;
                         break;
                     }
@@ -1201,9 +1205,13 @@ Akey
                         console.log('  Has paren team:', /\([^)]+\)/.test(resultLines[i]));
                         console.log('  Has grade:', /(FR|SO|JR|SR)/.test(resultLines[i]));
                         console.log('  Has time:', /\d{2}:\d{2}:\d{2}\.\d{2}/.test(resultLines[i]));
-                        console.log('  Full pattern match:', /^\d+[\s\t]+[A-Z][A-Z\s'-]+\s*\([^)]+\)[\s\t]+(FR|SO|JR|SR)[\s\t]+\d{2}:\d{2}:\d{2}\.\d{2}/.test(resultLines[i]));
+                        console.log('  Pattern test 1:', /^\d+[\s\t]+[A-Z]/.test(resultLines[i]));
+                        console.log('  Pattern test 2:', /^\d+[\s\t]+[A-Z][A-Z\s'-]+/.test(resultLines[i]));
+                        console.log('  Pattern test 3:', /^\d+[\s\t]+[A-Z][A-Z\s'-]+\(/.test(resultLines[i]));
+                        console.log('  Pattern test 4:', /^\d+[\s\t]+[A-Z][A-Z\s'-]+\([^)]+\)/.test(resultLines[i]));
+                        console.log('  Full pattern match:', /^\d+[\s\t]+[A-Z][A-Z\s'-]+\([^)]+\)[\s\t]+(FR|SO|JR|SR)[\s\t]+\d{2}:\d{2}:\d{2}\.\d{2}/.test(resultLines[i]));
                     }
-                    if (resultLines[i].match(/^\d+[\s\t]+[A-Z][A-Z\s'-]+\s*\([^)]+\)[\s\t]+(FR|SO|JR|SR)[\s\t]+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
+                    if (resultLines[i].match(/^\d+[\s\t]+[A-Z][A-Z\s'-]+\([^)]+\)[\s\t]+(FR|SO|JR|SR)[\s\t]+\d{2}:\d{2}:\d{2}\.\d{2}/)) {
                         console.log('Colorado pattern matched at line', i, ':', resultLines[i]);
                         hasColoradoPattern = true;
                         break;
@@ -4630,7 +4638,12 @@ Akey
             const name = match[2].trim(); // Already in FIRST LAST format, all caps
             const team = match[3].trim();
             const grade = match[4];
-            const time = match[5];
+            let time = match[5];
+
+            // Remove leading "00:" from times (convert HH:MM:SS to MM:SS)
+            if (time.startsWith('00:')) {
+                time = time.substring(3);
+            }
 
             // Convert ALL CAPS name to Title Case for better readability
             const nameParts = name.split(/\s+/);
