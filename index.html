@@ -4367,9 +4367,12 @@ Akey
                     console.log('  line3:', JSON.stringify(line3));
                 }
 
-                // Check if line3 starts with a grade (9-12) - indicates 3-line format
+                // Check if line3 starts with a grade (9-12) OR has a time - indicates 3-line format
                 const line3Parts = line3.split(/\s+/);
-                if (line3Parts.length >= 3 && line3Parts[0].match(/^([6-9]|1[0-2])$/)) {
+                const startsWithGrade = line3Parts.length >= 3 && line3Parts[0].match(/^([6-9]|1[0-2])$/);
+                const hasTime = line3Parts.some(part => part.match(/^\d{1,2}:\d{2}\.\d{1,2}$/));
+
+                if ((startsWithGrade || hasTime) && line3Parts.length >= 2) {
                     // 3-line format: line2 has team+name concatenated, line3 has grade/team/time/points
                     // Extract name from line2 by finding capital letter pattern
                     // Pattern: "St. IgnatiusLukas Gerber" - find where athlete name starts
@@ -4392,12 +4395,19 @@ Akey
                         console.log('  Extracted name:', JSON.stringify(name));
                     }
 
-                    // Parse line3 (grade, team, time, points)
-                    const grade = line3Parts[0];
+                    // Parse line3 (grade/team/time/points or team/time/points if grade missing)
+                    let grade = '';
+                    let startIndex = 0;
+
+                    // Check if first part is a grade
+                    if (line3Parts[0].match(/^([6-9]|1[0-2])$/)) {
+                        grade = line3Parts[0];
+                        startIndex = 1;
+                    }
 
                     // Find time field
                     let timeIndex = -1;
-                    for (let i = 1; i < line3Parts.length; i++) {
+                    for (let i = startIndex; i < line3Parts.length; i++) {
                         if (line3Parts[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
                             timeIndex = i;
                             break;
@@ -4406,8 +4416,8 @@ Akey
                     if (timeIndex === -1) return null;
                     const time = line3Parts[timeIndex];
 
-                    // Team is between grade and time
-                    const teamParts = line3Parts.slice(1, timeIndex);
+                    // Team is between grade (or start) and time
+                    const teamParts = line3Parts.slice(startIndex, timeIndex);
                     const team = teamParts.length > 0 ? teamParts.join(' ') : line2.replace(name, '').trim();
 
                     // Points (if present) is after time
