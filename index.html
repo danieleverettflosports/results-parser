@@ -4338,57 +4338,107 @@ Akey
             }
 
             // Check if this is multi-line format (place number only on line)
-            if (typeof lines !== 'string' && trimmed.match(/^\d+\s*$/) && index + 3 < lines.length) {
+            if (typeof lines !== 'string' && trimmed.match(/^\d+\s*$/) && index + 2 < lines.length) {
                 const place = trimmed;
-                const line2 = lines[index + 1].trim(); // Team logo/name
-                const line3 = lines[index + 2].trim(); // Athlete name
-                const line4 = lines[index + 3].trim(); // Grade, team, time, points
+                const line2 = lines[index + 1].trim(); // Team logo/name or concatenated team+name
+                const line3 = lines[index + 2].trim(); // Athlete name OR grade/team/time/points
 
-                // Parse line 3 (athlete name)
-                const nameParts = line3.split(/\s+/);
-                if (nameParts.length < 2) return null;
-                const name = line3; // Full name
+                // Check if line3 starts with a grade (9-12) - indicates 3-line format
+                const line3Parts = line3.split(/\s+/);
+                if (line3Parts.length >= 3 && line3Parts[0].match(/^([6-9]|1[0-2])$/)) {
+                    // 3-line format: line2 has team+name concatenated, line3 has grade/team/time/points
+                    // Extract name from line2 by finding capital letter pattern
+                    // Pattern: "St. IgnatiusLukas Gerber" - find where athlete name starts (capital after lowercase)
+                    const nameMatch = line2.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
+                    let name = nameMatch ? nameMatch[1] : line2;
 
-                // Parse line 4 (grade, team, time, points)
-                const parts4 = line4.split(/\s+/);
-                if (parts4.length < 3) return null;
+                    // Parse line3 (grade, team, time, points)
+                    const grade = line3Parts[0];
 
-                // First part should be grade
-                const grade = parts4[0];
-                if (!grade.match(/^([6-9]|1[0-2])$/)) return null;
-
-                // Find time field
-                let timeIndex = -1;
-                for (let i = 1; i < parts4.length; i++) {
-                    if (parts4[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
-                        timeIndex = i;
-                        break;
+                    // Find time field
+                    let timeIndex = -1;
+                    for (let i = 1; i < line3Parts.length; i++) {
+                        if (line3Parts[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
+                            timeIndex = i;
+                            break;
+                        }
                     }
+                    if (timeIndex === -1) return null;
+                    const time = line3Parts[timeIndex];
+
+                    // Team is between grade and time
+                    const teamParts = line3Parts.slice(1, timeIndex);
+                    const team = teamParts.length > 0 ? teamParts.join(' ') : line2.replace(name, '').trim();
+
+                    // Points (if present) is after time
+                    let points = '';
+                    if (timeIndex + 1 < line3Parts.length && line3Parts[timeIndex + 1].match(/^\d+$/)) {
+                        points = line3Parts[timeIndex + 1];
+                    }
+
+                    return {
+                        place: place,
+                        bib: '',
+                        name: name,
+                        team: team,
+                        time: time,
+                        grade: grade,
+                        points: points,
+                        pace: '',
+                        linesConsumed: 3 // 3-line format
+                    };
                 }
-                if (timeIndex === -1) return null;
-                const time = parts4[timeIndex];
 
-                // Team is between grade and time
-                const teamParts = parts4.slice(1, timeIndex);
-                const team = teamParts.length > 0 ? teamParts.join(' ') : line2;
+                // 4-line format: normal structure
+                if (index + 3 < lines.length) {
+                    const line4 = lines[index + 3].trim(); // Grade, team, time, points
 
-                // Points (if present) is after time
-                let points = '';
-                if (timeIndex + 1 < parts4.length && parts4[timeIndex + 1].match(/^\d+$/)) {
-                    points = parts4[timeIndex + 1];
+                    // Parse line3 (athlete name)
+                    const nameParts = line3.split(/\s+/);
+                    if (nameParts.length < 2) return null;
+                    const name = line3; // Full name
+
+                    // Parse line4 (grade, team, time, points)
+                    const parts4 = line4.split(/\s+/);
+                    if (parts4.length < 3) return null;
+
+                    // First part should be grade
+                    const grade = parts4[0];
+                    if (!grade.match(/^([6-9]|1[0-2])$/)) return null;
+
+                    // Find time field
+                    let timeIndex = -1;
+                    for (let i = 1; i < parts4.length; i++) {
+                        if (parts4[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
+                            timeIndex = i;
+                            break;
+                        }
+                    }
+                    if (timeIndex === -1) return null;
+                    const time = parts4[timeIndex];
+
+                    // Team is between grade and time
+                    const teamParts = parts4.slice(1, timeIndex);
+                    const team = teamParts.length > 0 ? teamParts.join(' ') : line2;
+
+                    // Points (if present) is after time
+                    let points = '';
+                    if (timeIndex + 1 < parts4.length && parts4[timeIndex + 1].match(/^\d+$/)) {
+                        points = parts4[timeIndex + 1];
+                    }
+
+                    return {
+                        place: place,
+                        bib: '',
+                        name: name,
+                        team: team,
+                        time: time,
+                        grade: grade,
+                        points: points,
+                        pace: '',
+                        linesConsumed: 4 // Multi-line format consumes 4 lines
+                    };
                 }
-
-                return {
-                    place: place,
-                    bib: '',
-                    name: name,
-                    team: team,
-                    time: time,
-                    grade: grade,
-                    points: points,
-                    pace: '',
-                    linesConsumed: 4 // Multi-line format consumes 4 lines
-                };
             }
 
             // Try single-line format
