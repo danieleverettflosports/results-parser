@@ -4359,6 +4359,14 @@ Akey
                 const line2 = lines[index + 1].trim(); // Team logo/name or concatenated team+name
                 const line3 = lines[index + 2].trim(); // Athlete name OR grade/team/time/points
 
+                // Debug logging for place 76
+                if (place === '76') {
+                    console.log('Place 76 multi-line check:');
+                    console.log('  place:', JSON.stringify(place));
+                    console.log('  line2:', JSON.stringify(line2));
+                    console.log('  line3:', JSON.stringify(line3));
+                }
+
                 // Check if line3 starts with a grade (9-12) - indicates 3-line format
                 const line3Parts = line3.split(/\s+/);
                 if (line3Parts.length >= 3 && line3Parts[0].match(/^([6-9]|1[0-2])$/)) {
