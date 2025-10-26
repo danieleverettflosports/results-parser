@@ -4376,6 +4376,14 @@ Akey
                         name = nameMatch ? nameMatch[1] : line2;
                     }
 
+                    // Debug logging for place 76
+                    if (place === '76') {
+                        console.log('Place 76 detected!');
+                        console.log('  line2:', JSON.stringify(line2));
+                        console.log('  line3:', JSON.stringify(line3));
+                        console.log('  Extracted name:', JSON.stringify(name));
+                    }
+
                     // Parse line3 (grade, team, time, points)
                     const grade = line3Parts[0];
 
