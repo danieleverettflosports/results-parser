@@ -4364,9 +4364,17 @@ Akey
                 if (line3Parts.length >= 3 && line3Parts[0].match(/^([6-9]|1[0-2])$/)) {
                     // 3-line format: line2 has team+name concatenated, line3 has grade/team/time/points
                     // Extract name from line2 by finding capital letter pattern
-                    // Pattern: "St. IgnatiusLukas Gerber" - find where athlete name starts (capital after lowercase)
-                    const nameMatch = line2.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
-                    let name = nameMatch ? nameMatch[1] : line2;
+                    // Pattern: "St. IgnatiusLukas Gerber" - find where athlete name starts
+                    // Look for pattern: capital letter after lowercase letter (no space) OR last 2+ capitalized words
+                    // First try: find capital after lowercase without space (e.g., "...sLukas")
+                    let nameMatch = line2.match(/[a-z]([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)$/);
+                    let name = nameMatch ? nameMatch[1] : null;
+
+                    // Fallback: try to match last 2+ capitalized words
+                    if (!name) {
+                        nameMatch = line2.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
+                        name = nameMatch ? nameMatch[1] : line2;
+                    }
 
                     // Parse line3 (grade, team, time, points)
                     const grade = line3Parts[0];
