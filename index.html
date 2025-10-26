@@ -793,12 +793,19 @@ Akey
                         startIndex = i + 1;
                         break;
                     }
-                    // Athletic.net multi-line format: "1" on one line, team, name, grade/team/time on following lines
+                    // Athletic.net 4-line format: "1" on one line, team, name, grade/team/time on following lines
                     // Check for "1" followed by team name, athlete name, and grade/time pattern
                     if (line.match(/^1\s*$/) && i + 3 < lines.length &&
                         lines[i + 1].match(/^[A-Z]/) &&
                         lines[i + 2].match(/^[A-Z][a-z]+\s+[A-Z]/) &&
                         lines[i + 3].match(/^(9|10|11|12)\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
+                        startIndex = i;
+                        break;
+                    }
+                    // Athletic.net 3-line format: "1", team+name, grade/team/time
+                    if (line.match(/^1\s*$/) && i + 2 < lines.length &&
+                        lines[i + 1].match(/^[A-Z]/) &&
+                        lines[i + 2].match(/^(9|10|11|12)\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
                         startIndex = i;
                         break;
                     }
@@ -1221,12 +1228,21 @@ Akey
                         hasAthleticNetPattern = true;
                         break;
                     }
-                    // Athletic.net multi-line variant: check for place number followed by team name and athlete name pattern
+                    // Athletic.net multi-line variant (4-line): check for place number followed by team name and athlete name pattern
                     if (i + 3 < resultLines.length &&
                         resultLines[i].match(/^\d+\s*$/) &&
                         resultLines[i + 1].match(/^[A-Z]/) &&
                         resultLines[i + 2].match(/^[A-Z][a-z]+\s+[A-Z]/) &&
                         resultLines[i + 3].match(/^(9|10|11|12)\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
+                        hasAthleticNetPattern = true;
+                        break;
+                    }
+                    // Athletic.net 3-line variant: place, team+name concatenated, grade/team/time
+                    // Example: "76" -> "St. IgnatiusLukas Gerber" -> "St. Ignatius    17:51.95    75"
+                    if (i + 2 < resultLines.length &&
+                        resultLines[i].match(/^\d+\s*$/) &&
+                        resultLines[i + 1].match(/^[A-Z]/) &&
+                        resultLines[i + 2].match(/^(9|10|11|12)\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
                         hasAthleticNetPattern = true;
                         break;
                     }
