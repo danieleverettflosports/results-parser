@@ -793,7 +793,16 @@ Akey
                         startIndex = i + 1;
                         break;
                     }
-                    // Check for data line: Must NOT have comma (to distinguish from HyTek)
+                    // Athletic.net multi-line format: "1" on one line, team, name, grade/team/time on following lines
+                    // Check for "1" followed by team name, athlete name, and grade/time pattern
+                    if (line.match(/^1\s*$/) && i + 3 < lines.length &&
+                        lines[i + 1].match(/^[A-Z]/) &&
+                        lines[i + 2].match(/^[A-Z][a-z]+\s+[A-Z]/) &&
+                        lines[i + 3].match(/^(9|10|11|12)\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
+                        startIndex = i;
+                        break;
+                    }
+                    // Check for single-line data: Must NOT have comma (to distinguish from HyTek)
                     if (line.match(/^1\s+[A-Z][a-z]+\s+[A-Z][a-z']+\s+([6-9]|1[0-2])\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/) && !line.includes(',')) {
                         startIndex = i;
                         break;
@@ -1198,13 +1207,26 @@ Akey
                         break;
                     }
                     // Athletic.net format detection
-                    // Pattern: Place, Name (First Last), Grade, Team, Time (MM:SS.SS), Points (optional)
+                    // Two formats:
+                    // Format 1 (single-line): Place, Name (First Last), Grade, Team, Time (MM:SS.SS), Points (optional)
                     // Example: "1 Anna Prusak 12 Hathaway Brown 18:05.59 1"
-                    // Example: "15 Tillie O'donnell 12 Will. South 20:02.07" (no points)
-                    // Key identifiers: No bib, no comma in name, grade after name, no /M in time
-                    // Check for header "PLACE VIDEO ATHLETE TEAM MARK POINTS" OR data pattern
+                    // Format 2 (multi-line from HTML table): Place on one line, team, name, then grade/team/time/points
+                    // Line 0: "1    "
+                    // Line 1: "St. Ignatius" (team logo)
+                    // Line 2: "Maxwell Friedrich" (name)
+                    // Line 3: "12    St. Ignatius    15:40.89    1"
+                    // Check for header "PLACE VIDEO ATHLETE TEAM MARK POINTS" OR single-line data pattern OR multi-line pattern
                     if (resultLines[i].match(/^PLACE\s+VIDEO\s+ATHLETE\s+TEAM\s+MARK\s+POINTS/i) ||
                         resultLines[i].match(/^\d+\s+[A-Z][a-z]+\s+[A-Z][a-z']+\s+([6-9]|1[0-2])\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
+                        hasAthleticNetPattern = true;
+                        break;
+                    }
+                    // Athletic.net multi-line variant: check for place number followed by team name and athlete name pattern
+                    if (i + 3 < resultLines.length &&
+                        resultLines[i].match(/^\d+\s*$/) &&
+                        resultLines[i + 1].match(/^[A-Z]/) &&
+                        resultLines[i + 2].match(/^[A-Z][a-z]+\s+[A-Z]/) &&
+                        resultLines[i + 3].match(/^(9|10|11|12)\s+[\w\s.'-]+\s+\d{1,2}:\d{2}\.\d{2}/)) {
                         hasAthleticNetPattern = true;
                         break;
                     }
@@ -2088,7 +2110,7 @@ Akey
                             continue;
                         }
                         else {
-                            let result = parseAthleticNetFormat(line);
+                            let result = parseAthleticNetFormat(resultLines, i);
                             if (result) {
                                 // If we have a header candidate and we're parsing actual results, add the header first
                                 if (lastHeaderCandidate) {
@@ -2111,6 +2133,11 @@ Akey
                                 // Count non-scoring athletes (no points)
                                 if (!result.points || result.points === '') {
                                     nonScoringCount++;
+                                }
+
+                                // Skip additional lines if multi-line format
+                                if (result.linesConsumed && result.linesConsumed > 1) {
+                                    i += result.linesConsumed - 1;
                                 }
                             }
                         }
@@ -4290,21 +4317,81 @@ Akey
             };
         }
 
-        function parseAthleticNetFormat(line) {
-            // Format: Place, Name (First Last), Grade, Team, Time, Points (optional)
+        function parseAthleticNetFormat(lines, index) {
+            // Two formats supported:
+            // Format 1 (single-line): Place, Name (First Last), Grade, Team, Time, Points (optional)
             // Example: "1 Anna Prusak 12 Hathaway Brown 18:05.59 1"
-            // Example: "15 Tillie O'donnell 12 Will. South 20:02.07" (no points - non-scoring team)
-            // Key: No bib numbers, grade after name, time in MM:SS.SS format
+            //
+            // Format 2 (multi-line from HTML table):
+            // Line 0: "1    " (place, possibly with video/image)
+            // Line 1: "St. Ignatius" (team logo/name)
+            // Line 2: "Maxwell Friedrich" (athlete name)
+            // Line 3: "12    St. Ignatius    15:40.89    1" (grade, team, time, points)
 
+            // Try single-line format first
+            const line = typeof lines === 'string' ? lines : lines[index];
             const trimmed = line.trim();
 
             // Skip non-data lines, headers, and empty lines
-            if (!trimmed ||
-                trimmed.match(/^(PLACE|VIDEO|ATHLETE|TEAM|MARK|POINTS|---+)/i)) {
+            if (!trimmed || trimmed.match(/^(PLACE|VIDEO|ATHLETE|TEAM|MARK|POINTS|---+)/i)) {
                 return null;
             }
 
-            // Split by whitespace
+            // Check if this is multi-line format (place number only on line)
+            if (typeof lines !== 'string' && trimmed.match(/^\d+\s*$/) && index + 3 < lines.length) {
+                const place = trimmed;
+                const line2 = lines[index + 1].trim(); // Team logo/name
+                const line3 = lines[index + 2].trim(); // Athlete name
+                const line4 = lines[index + 3].trim(); // Grade, team, time, points
+
+                // Parse line 3 (athlete name)
+                const nameParts = line3.split(/\s+/);
+                if (nameParts.length < 2) return null;
+                const name = line3; // Full name
+
+                // Parse line 4 (grade, team, time, points)
+                const parts4 = line4.split(/\s+/);
+                if (parts4.length < 3) return null;
+
+                // First part should be grade
+                const grade = parts4[0];
+                if (!grade.match(/^([6-9]|1[0-2])$/)) return null;
+
+                // Find time field
+                let timeIndex = -1;
+                for (let i = 1; i < parts4.length; i++) {
+                    if (parts4[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/)) {
+                        timeIndex = i;
+                        break;
+                    }
+                }
+                if (timeIndex === -1) return null;
+                const time = parts4[timeIndex];
+
+                // Team is between grade and time
+                const teamParts = parts4.slice(1, timeIndex);
+                const team = teamParts.length > 0 ? teamParts.join(' ') : line2;
+
+                // Points (if present) is after time
+                let points = '';
+                if (timeIndex + 1 < parts4.length && parts4[timeIndex + 1].match(/^\d+$/)) {
+                    points = parts4[timeIndex + 1];
+                }
+
+                return {
+                    place: place,
+                    bib: '',
+                    name: name,
+                    team: team,
+                    time: time,
+                    grade: grade,
+                    points: points,
+                    pace: '',
+                    linesConsumed: 4 // Multi-line format consumes 4 lines
+                };
+            }
+
+            // Try single-line format
             const parts = trimmed.split(/\s+/);
 
             // Need at least: Place, FirstName, LastName, Grade, Team, Time (6 fields minimum)
@@ -4315,7 +4402,6 @@ Akey
             if (!place.match(/^\d+$/)) return null;
 
             // Second and third parts should be name (First Last)
-            // Name should start with capital letter
             if (!parts[1] || !parts[1].match(/^[A-Z]/)) return null;
             if (!parts[2] || !parts[2].match(/^[A-Z]/)) return null;
 
