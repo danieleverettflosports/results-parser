@@ -4327,17 +4327,20 @@ Akey
         }
 
         function parseHyTekFormat(line) {
-            // Format: Place, Name (Last, First), Grade, School/Team, Time, Points (optional)
-            // Example: "1 Meyer, Josiah 10 Central Heights 17:23.10 1"
-            // Example: "4 Alvarez, Myles 11 Pleasanton 17:53.39" (no points)
-            // Header: "Name Year School Finals Points"
+            // Two formats supported:
+            // Format 1: Place, Name (Last, First), Grade, School/Team, Time, Points (optional)
+            //   Example: "1 Meyer, Josiah 10 Central Heights 17:23.10 1"
+            //   Example: "4 Alvarez, Myles 11 Pleasanton 17:53.39" (no points)
+            // Format 2: Place, #, Bib, Name (Last, First), Team, Time, Points (optional)
+            //   Example: " 1 # 500 Flood, Nathalie City - Royal 30:13.39"
+            // Header: "Name Year School Finals Points" or "Name Year Team Finals Points"
             // Also has "Results - Men" or "Results - Women" section headers
 
             const trimmed = line.trim();
 
             // Skip non-data lines, headers, separators, and team scores section
             if (!trimmed ||
-                trimmed.match(/^(Event|\=+|Name|Year|School|Finals|Points|Results\s+-|Team\s+Scores|Rank\s+Team)/i) ||
+                trimmed.match(/^(Event|\=+|Name|Year|School|Team|Finals|Points|Results\s+-|Team\s+Scores|Rank\s+Team)/i) ||
                 trimmed.match(/^Total Time:|^Average:/)) {
                 return null;
             }
@@ -4345,13 +4348,70 @@ Akey
             // Split by whitespace
             const parts = trimmed.split(/\s+/);
 
-            // Need at least: Place, LastName, FirstName, Grade, Team, Time (6 fields minimum)
-            if (parts.length < 6) return null;
+            // Need at least 5 fields
+            if (parts.length < 5) return null;
 
             // First part should be place number
             const place = parts[0];
             if (!place.match(/^\d+$/)) return null;
 
+            // Check if second part is "#" (bib number format)
+            if (parts[1] === '#' && parts.length >= 6) {
+                // Format 2: Place, #, Bib, Name (Last, First), Team, Time
+                const bib = parts[2];
+                if (!bib.match(/^\d+$/)) return null;
+
+                // Third part after # should be last name with comma
+                if (!parts[3] || !parts[3].includes(',')) return null;
+
+                // Extract name (format: "LastName, FirstName")
+                const lastName = parts[3].replace(/,$/, '');
+                const firstName = parts[4];
+                const name = `${lastName}, ${firstName}`;
+
+                // Find the time field - it's in MM:SS.S or MM:SS.SS or M:SS.SS format
+                let timeIndex = -1;
+                for (let i = 5; i < parts.length; i++) {
+                    if (parts[i].match(/^\d{1,2}:\d{2}\.\d{1,2}$/) || parts[i].match(/^\d{1,2}:\d{2}:\d{2}\.\d{2}$/)) {
+                        timeIndex = i;
+                        break;
+                    }
+                }
+
+                if (timeIndex === -1) return null;
+                let time = parts[timeIndex];
+
+                // Convert HH:MM:SS.SS to MM:SS.SS if needed
+                if (time.match(/^\d{1,2}:\d{2}:\d{2}\.\d{2}$/)) {
+                    const timeParts = time.split(':');
+                    if (timeParts[0] === '00' || timeParts[0] === '0') {
+                        time = `${timeParts[1]}:${timeParts[2]}`;
+                    }
+                }
+
+                // Team is everything between firstName and time
+                const teamParts = parts.slice(5, timeIndex);
+                const team = teamParts.join(' ');
+
+                // Points (if present) is after time
+                let points = '';
+                if (timeIndex + 1 < parts.length && parts[timeIndex + 1].match(/^\d+$/)) {
+                    points = parts[timeIndex + 1];
+                }
+
+                return {
+                    place: place,
+                    bib: bib,
+                    name: name,
+                    team: team,
+                    time: time,
+                    grade: '',
+                    points: points,
+                    pace: ''
+                };
+            }
+
+            // Format 1: Place, Name (Last, First), Grade, School/Team, Time
             // Second part should be last name with comma (LASTNAME,)
             if (!parts[1] || !parts[1].includes(',')) return null;
 
