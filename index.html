@@ -966,6 +966,7 @@ Akey
                 let hasRMSPattern = false;
                 let hasBCPattern = false;
                 let hasColoradoPattern = false;
+                let hasTierPattern = false;
 
                 // Check for BC Athletics format FIRST (before team scores)
                 // BC Athletics has BOTH "Team Scores" AND "Individual Results" sections
@@ -1281,6 +1282,25 @@ Akey
                         hasColoradoPattern = true;
                         break;
                     }
+                    // Tier format detection (e.g., Fraser Valley cross country)
+                    // Pattern: Overall Score Bib# Name Tier Chip Time Team
+                    // Example: "1 0 329 Avery Scott AAA 00:12:43.71 CLAYBURN MIDDLE"
+                    // Example: "14 (4) 173 Kanisha Malhi AAA 00:19:28.23 MEI Middle School"
+                    // Key identifiers:
+                    //   - Header contains "Overall Score Bib# Name Tier" or "Tier Chip Time"
+                    //   - Tier column with A, AA, or AAA values
+                    //   - Time format: HH:MM:SS.SS
+                    //   - Score can be number, 0, or "(n)"
+                    if (lines.some(line => line.match(/Overall\s+Score\s+Bib#\s+Name\s+Tier/i)) ||
+                        lines.some(line => line.match(/Tier\s+Chip Time/i))) {
+                        console.log('Tier format header found');
+                        // Look for data pattern with tier (A/AA/AAA) and HH:MM:SS.SS time
+                        if (resultLines[i].match(/^1\s+(\d+|\(\d+\))\s+\d{2,5}\s+\w+.*\s+(A|AA|AAA)\s+\d{2}:\d{2}:\d{2}\.\d{2}/i)) {
+                            console.log('Tier pattern matched at line', i, ':', resultLines[i]);
+                            hasTierPattern = true;
+                            break;
+                        }
+                    }
                     // Race Management Systems (RMS) format detection
                     // Pattern: Place Score Bib No Name Team Grade Time Pace [Class] [Qualifier]
                     // Example: "1 1 684 Cooper Ratliff Mason 11 17:13.64 5:33/M TM"
@@ -1397,6 +1417,46 @@ Akey
                             }
                         }
                     }
+                } else if (hasTierPattern) {
+                    // Process Tier format (Fraser Valley)
+                    console.log('Processing Tier format');
+
+                    // Look for race headers like "Race 1 Gr 8 Girl"
+                    let lastHeaderCandidate = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for race headers: "Race N Gr # Boy/Girl"
+                        if (line.match(/^Race\s+\d+\s+Gr\s+\d+\s+(Boy|Girl)/i)) {
+                            lastHeaderCandidate = line;
+                        } else if (line.match(/^Individual Overall Results$/i)) {
+                            // Skip "Individual Overall Results" header line
+                            continue;
+                        } else {
+                            let result = parseTierFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate.toUpperCase(),
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                    console.log('Tier parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasColoradoPattern) {
                     // Process Colorado format
                     console.log('Processing Colorado format');
@@ -4855,6 +4915,98 @@ Akey
                 time: time,
                 grade: '',
                 points: teamPlace, // Use team place as points
+                pace: ''
+            };
+        }
+
+        function parseTierFormat(line) {
+            // Tier format (Fraser Valley cross country)
+            // Pattern: Overall Score Bib# Name Tier Chip Time Team
+            // Example: "1 0 329 Avery Scott AAA 00:12:43.71 CLAYBURN MIDDLE"
+            // Example: "14 (4) 173 Kanisha Malhi AAA 00:19:28.23 MEI Middle School"
+            // Format:
+            //   - Overall place (number)
+            //   - Score (number, 0, or "(n)" for team place)
+            //   - Bib number (2-5 digits)
+            //   - Name (First Last format)
+            //   - Tier (A, AA, or AAA)
+            //   - Chip Time (HH:MM:SS.SS format)
+            //   - Team name
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines and headers
+            if (!trimmed ||
+                trimmed.match(/^(Overall|Score|Bib|Name|Tier|Chip|Time|Team|Individual|Results|Race|Gr)/i) ||
+                trimmed.length < 20) {
+                return null;
+            }
+
+            // Pattern: Place, Score (number or "(n)"), Bib, Name, Tier (A/AA/AAA), Time (HH:MM:SS.SS), Team
+            // Split by whitespace (tabs or multiple spaces)
+            const parts = trimmed.split(/\s+/);
+
+            if (parts.length < 7) return null;
+
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Score can be number, "0", or "(number)"
+            let score = parts[1];
+            let scoreProcessed = '';
+            if (score.match(/^\(\d+\)$/)) {
+                scoreProcessed = score.replace(/[()]/g, '');
+            } else if (score !== '0' && score.match(/^\d+$/)) {
+                scoreProcessed = score;
+            }
+
+            const bib = parts[2];
+            if (!bib.match(/^\d{2,5}$/)) return null;
+
+            // Find tier column (A, AA, or AAA)
+            let tierIndex = -1;
+            for (let i = 3; i < parts.length; i++) {
+                if (parts[i].match(/^(A|AA|AAA)$/)) {
+                    tierIndex = i;
+                    break;
+                }
+            }
+
+            if (tierIndex === -1) return null;
+
+            // Find time (HH:MM:SS.SS format)
+            let timeIndex = -1;
+            for (let i = tierIndex + 1; i < parts.length; i++) {
+                if (parts[i].match(/^\d{2}:\d{2}:\d{2}\.\d{2}$/)) {
+                    timeIndex = i;
+                    break;
+                }
+            }
+
+            if (timeIndex === -1) return null;
+
+            // Name is everything between bib and tier
+            const name = parts.slice(3, tierIndex).join(' ');
+            if (!name) return null;
+
+            // Team is everything after time
+            const team = parts.slice(timeIndex + 1).join(' ');
+            if (!team) return null;
+
+            let time = parts[timeIndex];
+            // Remove leading "00:" from times (convert HH:MM:SS to MM:SS)
+            if (time.startsWith('00:')) {
+                time = time.substring(3);
+            }
+
+            return {
+                place: place,
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: '', // No grade in this format
+                points: scoreProcessed,
                 pace: ''
             };
         }
