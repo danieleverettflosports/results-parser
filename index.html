@@ -857,6 +857,8 @@ Akey
                     const hasSplitPattern = lines.some(line => line.match(/1-5 Split/i));
                     const hasTierHeader = lines.some(line => line.match(/Overall\s+Score\s+Bib#\s+Name\s+Tier/i));
                     const hasTierRaceHeader = lines.some(line => line.match(/^Race\s+\d+\s+Gr\s+\d+\s+(Boy|Girl)/i));
+                    const hasOCSAAHeader = lines.some(line => line.match(/Placing\s+Time\s+Bib\s+Name.*Pace/i)) &&
+                                          lines.some(line => line.match(/Age Group\s+All\s+Sex/i));
 
                     if (hasBCIndividualResults && hasBCEventHeader) {
                         // BC Athletics format - set startIndex to 0
@@ -865,6 +867,10 @@ Akey
                     } else if (hasTierHeader || hasTierRaceHeader) {
                         // Tier format (Fraser Valley) - set startIndex to 0
                         console.log('Detected Tier format, setting startIndex to 0');
+                        startIndex = 0;
+                    } else if (hasOCSAAHeader) {
+                        // OCSAA format (Ontario cross country) - set startIndex to 0
+                        console.log('Detected OCSAA format, setting startIndex to 0');
                         startIndex = 0;
                     } else if (hasTeamScoresHeader || hasSplitPattern) {
                         console.log('Detected team scores format, setting startIndex to 0');
@@ -973,6 +979,7 @@ Akey
                 let hasBCPattern = false;
                 let hasColoradoPattern = false;
                 let hasTierPattern = false;
+                let hasOCSAAPattern = false;
 
                 // Check for BC Athletics format FIRST (before team scores)
                 // BC Athletics has BOTH "Team Scores" AND "Individual Results" sections
@@ -1307,6 +1314,24 @@ Akey
                             break;
                         }
                     }
+                    // OCSAA format detection (Ontario cross country)
+                    // Pattern: AgeGroupPlace OverallPlace SexPlace Time Bib Name Team Pace
+                    // Example: "1 23 3 17:18 335 Kenzie Taverner RSS 4:26/km"
+                    // Key identifiers:
+                    //   - Header: "Placing Time Bib Name City Pace" with "Age Group All Sex" sub-header
+                    //   - Three place numbers at start
+                    //   - Pace format: "M:SS/km"
+                    //   - Category headers: "Junior Female", "Junior Male", "Senior Female", "Senior Male"
+                    if (lines.some(line => line.match(/Placing\s+Time\s+Bib\s+Name.*Pace/i)) &&
+                        lines.some(line => line.match(/Age Group\s+All\s+Sex/i))) {
+                        console.log('OCSAA header found');
+                        // Look for data pattern: three numbers, time, bib, name, team, pace with /km
+                        if (resultLines[i].match(/^1\s+\d+\s+\d+\s+\d{1,2}:\d{2}\s+\d{2,4}\s+\w+.*\d+:\d{2}\/km/i)) {
+                            console.log('OCSAA pattern matched at line', i, ':', resultLines[i]);
+                            hasOCSAAPattern = true;
+                            break;
+                        }
+                    }
                     // Race Management Systems (RMS) format detection
                     // Pattern: Place Score Bib No Name Team Grade Time Pace [Class] [Qualifier]
                     // Example: "1 1 684 Cooper Ratliff Mason 11 17:13.64 5:33/M TM"
@@ -1463,6 +1488,46 @@ Akey
                         }
                     }
                     console.log('Tier parsing complete, extracted', extractedResults.length, 'results');
+                } else if (hasOCSAAPattern) {
+                    // Process OCSAA format (Ontario cross country)
+                    console.log('Processing OCSAA format');
+
+                    // Look for category headers like "Junior Female", "Senior Male"
+                    let lastHeaderCandidate = null;
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Check for category headers: "Junior Female", "Junior Male", "Senior Female", "Senior Male"
+                        if (line.match(/^(Junior|Senior)\s+(Female|Male)$/i)) {
+                            lastHeaderCandidate = line;
+                        } else if (line.match(/^(Placing|Time|Bib|Name|City|Pace|Age Group|All|Sex)$/i)) {
+                            // Skip column header lines
+                            continue;
+                        } else {
+                            let result = parseOCSAAFormat(line);
+                            if (result) {
+                                // If we have a header candidate and we're parsing actual results, add the header first
+                                if (lastHeaderCandidate) {
+                                    extractedResults.push({
+                                        isHeader: true,
+                                        headerText: lastHeaderCandidate.toUpperCase(),
+                                        place: '',
+                                        bib: '',
+                                        name: '',
+                                        team: '',
+                                        time: '',
+                                        grade: '',
+                                        points: '',
+                                        pace: ''
+                                    });
+                                    lastHeaderCandidate = null;
+                                }
+                                extractedResults.push(result);
+                            }
+                        }
+                    }
+                    console.log('OCSAA parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasColoradoPattern) {
                     // Process Colorado format
                     console.log('Processing Colorado format');
@@ -5074,6 +5139,85 @@ Akey
                 grade: '', // No grade in this format
                 points: scoreProcessed,
                 pace: ''
+            };
+        }
+
+        function parseOCSAAFormat(line) {
+            // OCSAA format (Ontario cross country)
+            // Pattern: AgeGroupPlace OverallPlace SexPlace Time Bib Name Team Pace
+            // Example: "1 23 3 17:18 335 Kenzie Taverner RSS 4:26/km"
+            // Format:
+            //   - Age group place (number)
+            //   - Overall place (number)
+            //   - Sex place (number)
+            //   - Time (MM:SS format)
+            //   - Bib (2-4 digits)
+            //   - Name (First Last format)
+            //   - Team/City (abbreviated, e.g., RSS, KLO)
+            //   - Pace (M:SS/km format)
+
+            const trimmed = line.trim();
+
+            // Skip non-data lines and headers
+            if (!trimmed ||
+                trimmed.match(/^(Placing|Time|Bib|Name|City|Pace|Age Group|All|Sex|Junior|Senior|Female|Male|OCSAA|Race|Results|Wednesday|Page)/i) ||
+                trimmed.length < 15) {
+                return null;
+            }
+
+            // Split by whitespace
+            const parts = trimmed.split(/\s+/);
+
+            // Need at least: AgeGroupPlace, OverallPlace, SexPlace, Time, Bib, FirstName, LastName, Team, Pace (9 fields)
+            if (parts.length < 9) return null;
+
+            // First three parts should be place numbers
+            const ageGroupPlace = parts[0];
+            const overallPlace = parts[1];
+            const sexPlace = parts[2];
+
+            if (!ageGroupPlace.match(/^\d+$/) || !overallPlace.match(/^\d+$/) || !sexPlace.match(/^\d+$/)) {
+                return null;
+            }
+
+            // Fourth part should be time (MM:SS or M:SS)
+            const time = parts[3];
+            if (!time.match(/^\d{1,2}:\d{2}$/)) return null;
+
+            // Fifth part should be bib number
+            const bib = parts[4];
+            if (!bib.match(/^\d{2,4}$/)) return null;
+
+            // Find pace (ends with /km)
+            let paceIndex = -1;
+            for (let i = parts.length - 1; i >= 5; i--) {
+                if (parts[i].match(/^\d+:\d{2}\/km$/i)) {
+                    paceIndex = i;
+                    break;
+                }
+            }
+
+            if (paceIndex === -1) return null;
+            const pace = parts[paceIndex];
+
+            // Team is right before pace
+            if (paceIndex - 1 < 6) return null;
+            const team = parts[paceIndex - 1];
+
+            // Name is everything between bib and team
+            const nameParts = parts.slice(5, paceIndex - 1);
+            if (nameParts.length === 0) return null;
+            const name = nameParts.join(' ');
+
+            return {
+                place: ageGroupPlace, // Use age group place as primary place
+                bib: bib,
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: '', // No points in this format
+                pace: pace
             };
         }
 
