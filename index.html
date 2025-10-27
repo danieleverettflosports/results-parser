@@ -852,13 +852,19 @@ Akey
                     // Check if this might be team scores data
                     // BUT: Check for BC Athletics first (which also has "Team Scores" but also "Individual Results")
                     const hasBCIndividualResults = lines.some(line => line.match(/^Individual Results$/i));
-                    const hasBCEventHeader = lines.some(line => line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i));
+                    const hasBCEventHeader = lines.some(line => line.match(/^(Boys?|Girls?)\s+(\d+k?\s+(Run|Meter Run)\s+CC|\([^)]+\)\s+m)/i));
                     const hasTeamScoresHeader = lines.some(line => line.match(/Team Scores$/i));
                     const hasSplitPattern = lines.some(line => line.match(/1-5 Split/i));
+                    const hasTierHeader = lines.some(line => line.match(/Overall\s+Score\s+Bib#\s+Name\s+Tier/i));
+                    const hasTierRaceHeader = lines.some(line => line.match(/^Race\s+\d+\s+Gr\s+\d+\s+(Boy|Girl)/i));
 
                     if (hasBCIndividualResults && hasBCEventHeader) {
                         // BC Athletics format - set startIndex to 0
                         console.log('Detected BC Athletics format, setting startIndex to 0');
+                        startIndex = 0;
+                    } else if (hasTierHeader || hasTierRaceHeader) {
+                        // Tier format (Fraser Valley) - set startIndex to 0
+                        console.log('Detected Tier format, setting startIndex to 0');
                         startIndex = 0;
                     } else if (hasTeamScoresHeader || hasSplitPattern) {
                         console.log('Detected team scores format, setting startIndex to 0');
