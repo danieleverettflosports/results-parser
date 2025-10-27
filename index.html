@@ -970,7 +970,7 @@ Akey
                 // Check for BC Athletics format FIRST (before team scores)
                 // BC Athletics has BOTH "Team Scores" AND "Individual Results" sections
                 const hasBCIndividualResults = lines.some(line => line.match(/^Individual Results$/i));
-                const hasBCEventHeader = lines.some(line => line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i));
+                const hasBCEventHeader = lines.some(line => line.match(/^(Boys?|Girls?)\s+(\d+k?\s+(Run|Meter Run)\s+CC|\([^)]+\)\s+m)/i));
 
                 if (hasBCIndividualResults && hasBCEventHeader) {
                     console.log('BC Athletics format detected via Individual Results and event headers');
@@ -1412,16 +1412,16 @@ Akey
                     // Process BC Athletics format
                     console.log('Processing BC Athletics format');
 
-                    // Look for race headers like "Boys 4k Run CC Junior 4000m"
+                    // Look for race headers like "Boys 4k Run CC Junior 4000m" or "Girls (Junior) m"
                     let lastHeaderCandidate = null;
 
                     for (let i = 0; i < resultLines.length; i++) {
                         const line = resultLines[i].trim();
 
                         // Check for event headers
-                        // Pattern: "Boys 4k Run CC Junior 4000m", "Girls 5k Run CC Senior 5000m"
+                        // Pattern: "Boys 4k Run CC Junior 4000m", "Girls 5k Run CC Senior 5000m", "Girls (Junior) m", "Boys (Para) m"
                         if (line &&
-                            line.match(/^(Boys?|Girls?)\s+\d+k?\s+(Run|Meter Run)\s+CC/i) &&
+                            line.match(/^(Boys?|Girls?)\s+(\d+k?\s+(Run|Meter Run)\s+CC|\([^)]+\)\s+m)/i) &&
                             line.length < 100) {
                             // Store as candidate, add it before first result
                             lastHeaderCandidate = line;
