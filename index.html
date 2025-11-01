@@ -859,6 +859,8 @@ Akey
                     const hasTierRaceHeader = lines.some(line => line.match(/^Race\s+\d+\s+Gr\s+\d+\s+(Boy|Girl)/i));
                     const hasOCSAAHeader = lines.some(line => line.match(/Placing\s+Time\s+Bib\s+Name.*Pace/i)) &&
                                           lines.some(line => line.match(/Age Group\s+All\s+Sex/i));
+                    const hasNIAAHeader = lines.some(line => line.match(/^Place\s+Name\s+Grade\s+Team\s+Time\s+Points$/i)) &&
+                                          lines.some(line => line.match(/^Race\s+\d+\s+-\s+\d+A\s+(Southern|Northern|Desert|Mountain)/i));
 
                     if (hasBCIndividualResults && hasBCEventHeader) {
                         // BC Athletics format - set startIndex to 0
@@ -871,6 +873,10 @@ Akey
                     } else if (hasOCSAAHeader) {
                         // OCSAA format (Ontario cross country) - set startIndex to 0
                         console.log('Detected OCSAA format, setting startIndex to 0');
+                        startIndex = 0;
+                    } else if (hasNIAAHeader) {
+                        // NIAA format (Nevada) - set startIndex to 0
+                        console.log('Detected NIAA format, setting startIndex to 0');
                         startIndex = 0;
                     } else if (hasTeamScoresHeader || hasSplitPattern) {
                         console.log('Detected team scores format, setting startIndex to 0');
@@ -1244,11 +1250,11 @@ Akey
                     // Key identifiers:
                     //   - Header: "Place Name Grade Team Time Points"
                     //   - Has "Team Results" and "Individual Results" sections
-                    //   - Header includes race name like "Race 1 - 5A Southern Boys - 5K"
+                    //   - Header includes race name like "Race 1 - 5A Southern Boys - 5K" or "Race 7 - 4A Desert Boys - 5K"
                     //   - Qualifier column with T/I at end of line
                     //   - Time format: MM:SS.S (one decimal place)
                     if (lines.some(line => line.match(/^Place\s+Name\s+Grade\s+Team\s+Time\s+Points$/i)) &&
-                        lines.some(line => line.match(/^Race\s+\d+\s+-\s+\d+A\s+(Southern|Northern)/i)) &&
+                        lines.some(line => line.match(/^Race\s+\d+\s+-\s+\d+A\s+(Southern|Northern|Desert|Mountain)/i)) &&
                         lines.some(line => line.match(/^(Team Results|Individual Results)$/i))) {
                         console.log('NIAA header found');
                         // Look for data pattern: Place, Name (First Last), Grade, Team (multi-word), Time (MM:SS.S), Points, optional T/I
@@ -1620,9 +1626,10 @@ Akey
                             const nextLine = resultLines[i + 1].trim();
                             const thirdLine = resultLines[i + 2].trim();
 
-                            // Pattern 1: Team name split - next line is team continuation (like "School", "Sky Pointe"),
+                            // Pattern 1: Team name split - next line is team continuation (like "School", "Sky Pointe", "of Las Vegas"),
                             // third line starts with time
-                            if (nextLine.match(/^[A-Z]/) &&
+                            // Make sure current line has a grade (9-12) to distinguish from name-split pattern
+                            if (line.match(/\s+(9|10|11|12)\s+/) &&
                                 !nextLine.match(/^\d/) &&
                                 !nextLine.match(/^(Place|Name|Grade|Team|Time|Points|Race|Individual|Page)/i) &&
                                 thirdLine.match(/^\d{1,2}:\d{2}\.\d/)) {
@@ -1637,7 +1644,7 @@ Akey
                             else if (nextLine.match(/^[A-Z]/) &&
                                 !nextLine.match(/^\d/) &&
                                 !nextLine.match(/^(Place|Name|Grade|Team|Time|Points|Race|Individual|Page)/i) &&
-                                thirdLine.match(/^(9|10|11|12)\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d/i)) {
+                                thirdLine.match(/^(9|10|11|12)\s+[\w\s\-']+\s+\d{1,2}:\d{2}\.\d/i)) {
                                 // Combine the lines
                                 const combinedLine = line + ' ' + nextLine + ' ' + thirdLine;
                                 result = parseNIAAFormat(combinedLine);
