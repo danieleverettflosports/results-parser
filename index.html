@@ -981,6 +981,7 @@ Akey
                 let hasTierPattern = false;
                 let hasOCSAAPattern = false;
                 let hasNMAAPattern = false;
+                let hasNIAAPattern = false;
 
                 // Check for BC Athletics format FIRST (before team scores)
                 // BC Athletics has BOTH "Team Scores" AND "Individual Results" sections
@@ -1234,6 +1235,26 @@ Akey
                         if (resultLines.some(line => line.match(/^\d+\s+\w+,\s+\w+.*\d{1,2}:\d{2}\.\d{2}/i))) {
                             console.log('NMAA pattern matched');
                             hasNMAAPattern = true;
+                            break;
+                        }
+                    }
+                    // NIAA format detection (Nevada Interscholastic Activities Association)
+                    // Pattern: Place Name Grade Team Time Points [Qualifier]
+                    // Example: "1 Brady Anderson 12 Faith Lutheran High School 15:34.1 1 T"
+                    // Key identifiers:
+                    //   - Header: "Place Name Grade Team Time Points"
+                    //   - Has "Team Results" and "Individual Results" sections
+                    //   - Header includes race name like "Race 1 - 5A Southern Boys - 5K"
+                    //   - Qualifier column with T/I at end of line
+                    //   - Time format: MM:SS.S (one decimal place)
+                    if (lines.some(line => line.match(/^Place\s+Name\s+Grade\s+Team\s+Time\s+Points$/i)) &&
+                        lines.some(line => line.match(/^Race\s+\d+\s+-\s+\d+A\s+(Southern|Northern)/i)) &&
+                        lines.some(line => line.match(/^(Team Results|Individual Results)$/i))) {
+                        console.log('NIAA header found');
+                        // Look for data pattern: Place, Name (First Last), Grade, Team (multi-word), Time (MM:SS.S), Points, optional T/I
+                        if (resultLines.some(line => line.match(/^\d+\s+[A-Z][a-z]+\s+[A-Z][a-z']+\s+(9|10|11|12)\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d(\s+\d+)?(\s+[TI])?/i))) {
+                            console.log('NIAA pattern matched');
+                            hasNIAAPattern = true;
                             break;
                         }
                     }
@@ -1569,6 +1590,89 @@ Akey
                         }
                     }
                     console.log('NMAA parsing complete, extracted', extractedResults.length, 'results');
+                } else if (hasNIAAPattern) {
+                    // Process NIAA format (Nevada)
+                    console.log('Processing NIAA format');
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Skip "Team Results" section header and team summary rows
+                        if (line.match(/^Team Results$/i) ||
+                            line.match(/^Place\s+Team\s+Score$/i)) {
+                            continue;
+                        }
+
+                        // Stop at page footers
+                        if (line.match(/^Page\s+\d+\/\d+/i)) {
+                            continue;
+                        }
+
+                        // Try parsing as single-line first
+                        let result = parseNIAAFormat(line);
+
+                        // If that fails, check if this might be a multi-line entry
+                        // There are multiple patterns:
+                        // Pattern 1: "Place Name Grade PartialTeam" + "RestOfTeam" + "Time Points Qualifier"
+                        // Pattern 2: "Place FirstName" + "LastName" + "Grade Team Time Points Qualifier"
+                        // Pattern 3: "Place Name" + "LastName" + "Grade PartialTeam" + "RestOfTeam" + "Time Points"
+                        if (!result && i + 2 < resultLines.length) {
+                            const nextLine = resultLines[i + 1].trim();
+                            const thirdLine = resultLines[i + 2].trim();
+
+                            // Pattern 1: Team name split - next line is team continuation (like "School", "Sky Pointe"),
+                            // third line starts with time
+                            if (nextLine.match(/^[A-Z]/) &&
+                                !nextLine.match(/^\d/) &&
+                                !nextLine.match(/^(Place|Name|Grade|Team|Time|Points|Race|Individual|Page)/i) &&
+                                thirdLine.match(/^\d{1,2}:\d{2}\.\d/)) {
+                                // Combine the lines
+                                const combinedLine = line + ' ' + nextLine + ' ' + thirdLine;
+                                result = parseNIAAFormat(combinedLine);
+                                if (result) {
+                                    i += 2; // Skip the next two lines since we processed them
+                                }
+                            }
+                            // Pattern 2: Name split - next line is name part, third line has grade at start
+                            else if (nextLine.match(/^[A-Z]/) &&
+                                !nextLine.match(/^\d/) &&
+                                !nextLine.match(/^(Place|Name|Grade|Team|Time|Points|Race|Individual|Page)/i) &&
+                                thirdLine.match(/^(9|10|11|12)\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d/i)) {
+                                // Combine the lines
+                                const combinedLine = line + ' ' + nextLine + ' ' + thirdLine;
+                                result = parseNIAAFormat(combinedLine);
+                                if (result) {
+                                    i += 2; // Skip the next two lines since we processed them
+                                }
+                            }
+                            // Pattern 3: Both name AND team split - need to check 4+ lines
+                            // Example: "70 Yuyay Williamson" + "Tabango" + "11 Green Valley High" + "School" + "19:15.4 70"
+                            else if (i + 4 < resultLines.length) {
+                                const fourthLine = resultLines[i + 3].trim();
+                                const fifthLine = resultLines[i + 4].trim();
+
+                                // Check if: nextLine is name part, thirdLine starts with grade, fourthLine is team part, fifthLine has time
+                                if (nextLine.match(/^[A-Z]/) &&
+                                    !nextLine.match(/^\d/) &&
+                                    thirdLine.match(/^(9|10|11|12)\s+/) &&
+                                    fourthLine.match(/^[A-Z]/) &&
+                                    !fourthLine.match(/^\d/) &&
+                                    fifthLine.match(/^\d{1,2}:\d{2}\.\d/)) {
+                                    // Combine all five lines
+                                    const combinedLine = line + ' ' + nextLine + ' ' + thirdLine + ' ' + fourthLine + ' ' + fifthLine;
+                                    result = parseNIAAFormat(combinedLine);
+                                    if (result) {
+                                        i += 4; // Skip the next four lines since we processed them
+                                    }
+                                }
+                            }
+                        }
+
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                    console.log('NIAA parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasColoradoPattern) {
                     // Process Colorado format
                     console.log('Processing Colorado format');
@@ -5349,6 +5453,93 @@ Akey
                 team: team,
                 time: time,
                 grade: '',
+                points: points,
+                pace: ''
+            };
+        }
+
+        function parseNIAAFormat(line) {
+            // NIAA format (Nevada Interscholastic Activities Association)
+            // Pattern: Place Name Grade Team Time Points [Qualifier]
+            // Example: "1 Brady Anderson 12 Faith Lutheran High School 15:34.1 1 T"
+            // Example: "23 Ka'eo Luna 11 Green Valley High School 17:15.9 23"
+            // Format:
+            //   - Place (number)
+            //   - Name (First Last or First Middle Last format, may have apostrophes)
+            //   - Grade (9-12)
+            //   - Team/School (multi-word, like "Faith Lutheran High School")
+            //   - Time (MM:SS.S format with 1 decimal place)
+            //   - Points (optional - some runners don't have points)
+            //   - Qualifier (optional - T or I at end)
+
+            const trimmed = line.trim();
+
+            // Skip headers and non-data lines
+            if (!trimmed ||
+                trimmed.match(/^(Place|Name|Grade|Team|Time|Points|Race|Individual Results|Team Results|Page|NIAA)/i) ||
+                trimmed.length < 15) {
+                return null;
+            }
+
+            // Split by whitespace
+            const parts = trimmed.split(/\s+/);
+
+            // Need at least: Place, FirstName, LastName, Grade, Team (at least 1 word), Time (6 fields minimum)
+            if (parts.length < 6) return null;
+
+            // First part should be place number
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Find grade (should be 9, 10, 11, or 12)
+            let gradeIndex = -1;
+            for (let i = 1; i < parts.length; i++) {
+                if (parts[i].match(/^(9|10|11|12)$/)) {
+                    gradeIndex = i;
+                    break;
+                }
+            }
+
+            if (gradeIndex === -1 || gradeIndex < 2) return null; // Need at least first and last name before grade
+            const grade = parts[gradeIndex];
+
+            // Name is everything between place and grade
+            const nameParts = parts.slice(1, gradeIndex);
+            const name = nameParts.join(' ');
+
+            // Find time (MM:SS.S format - one decimal place)
+            let timeIndex = -1;
+            for (let i = gradeIndex + 1; i < parts.length; i++) {
+                if (parts[i].match(/^\d{1,2}:\d{2}\.\d$/)) {
+                    timeIndex = i;
+                    break;
+                }
+            }
+
+            if (timeIndex === -1) return null;
+            const time = parts[timeIndex];
+
+            // Team is everything between grade and time
+            const teamParts = parts.slice(gradeIndex + 1, timeIndex);
+            if (teamParts.length === 0) return null;
+            const team = teamParts.join(' ');
+
+            // Points are after time (optional)
+            let points = '';
+            if (timeIndex + 1 < parts.length) {
+                const pointsCandidate = parts[timeIndex + 1];
+                if (pointsCandidate.match(/^\d+$/)) {
+                    points = pointsCandidate;
+                }
+            }
+
+            return {
+                place: place,
+                bib: '',
+                name: name,
+                team: team,
+                time: time,
+                grade: grade,
                 points: points,
                 pace: ''
             };
