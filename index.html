@@ -980,6 +980,7 @@ Akey
                 let hasColoradoPattern = false;
                 let hasTierPattern = false;
                 let hasOCSAAPattern = false;
+                let hasNMAAPattern = false;
 
                 // Check for BC Athletics format FIRST (before team scores)
                 // BC Athletics has BOTH "Team Scores" AND "Individual Results" sections
@@ -1216,12 +1217,33 @@ Akey
                         hasRiverCityPattern = true;
                         break;
                     }
+                    // New Mexico Athletic Association (NMAA) format detection
+                    // Pattern: Place Name Year School Time Points
+                    // Example: "1 Coombs, Daxton Organ Mounta 16:31.99 1"
+                    // Key identifiers:
+                    //   - Header: "========...Name Year School Finals Points========"
+                    //   - Footer: "Team Scores" section with "Rank Team Total 1 2 3 4 5 *6 *7 *8 *9"
+                    //   - Header contains "Finals" (not in HyTek)
+                    //   - Has equals line separators
+                    // Check NMAA before HyTek since both use "Name Year School" but NMAA has "Finals"
+                    if (lines.some(line => line.match(/^={50,}$/)) &&
+                        lines.some(line => line.match(/^\s*Name\s+Year\s+School\s+Finals\s+Points\s*$/i)) &&
+                        lines.some(line => line.match(/^Rank\s+Team\s+Total\s+1\s+2\s+3\s+4\s+5/i))) {
+                        console.log('NMAA header found (checked before HyTek)');
+                        // Look for data pattern in any of the result lines
+                        if (resultLines.some(line => line.match(/^\d+\s+\w+,\s+\w+.*\d{1,2}:\d{2}\.\d{2}/i))) {
+                            console.log('NMAA pattern matched');
+                            hasNMAAPattern = true;
+                            break;
+                        }
+                    }
                     // HyTek format detection
                     // Pattern: Place, Name (Last, First), Grade, Team, Time (with 2 decimals), Points (optional)
                     // Example: "1 Meyer, Josiah 10 Central Heights 17:23.10 1"
                     // Example: "36 McRoberts, Tristen 9 Central Heights 23:28.85"
                     // Key identifiers: LASTNAME, format and Name/Year/School/Finals headers or Results - Men/Women
                     // Check for the characteristic header pattern OR the data pattern with comma in name
+                    // NOTE: Check NMAA first (above) since both formats use "Name Year School"
                     if (resultLines[i].match(/^(Name\s+Year\s+School|Results\s+-\s+(Men|Women)|Event\s+\d+\s+(Boys?|Girls?))/i) ||
                         resultLines[i].match(/^\d+\s+[A-Z][a-z]+,\s+[A-Z][a-z]+\s+([6-9]|1[0-2])\s+[\w\s]+\s+\d{1,2}:\d{2}\.\d{1,2}/)) {
                         hasHyTekPattern = true;
@@ -1528,6 +1550,25 @@ Akey
                         }
                     }
                     console.log('OCSAA parsing complete, extracted', extractedResults.length, 'results');
+                } else if (hasNMAAPattern) {
+                    // Process NMAA format (New Mexico)
+                    console.log('Processing NMAA format');
+
+                    for (let i = 0; i < resultLines.length; i++) {
+                        const line = resultLines[i].trim();
+
+                        // Skip "Team Scores" section and everything after
+                        if (line.match(/^Team Scores$/i) || line.match(/^Rank\s+Team\s+Total/i)) {
+                            console.log('Stopping at Team Scores section');
+                            break;
+                        }
+
+                        let result = parseNMAAFormat(line);
+                        if (result) {
+                            extractedResults.push(result);
+                        }
+                    }
+                    console.log('NMAA parsing complete, extracted', extractedResults.length, 'results');
                 } else if (hasColoradoPattern) {
                     // Process Colorado format
                     console.log('Processing Colorado format');
@@ -5218,6 +5259,98 @@ Akey
                 grade: '',
                 points: '', // No points in this format
                 pace: pace
+            };
+        }
+
+        function parseNMAAFormat(line) {
+            // New Mexico Athletic Association (NMAA) format
+            // Pattern: Place Name Year School Time Points
+            // Example: "1 Coombs, Daxton Organ Mounta 16:31.99 1"
+            // Format:
+            //   - Place (number)
+            //   - Name (Last, First format with comma)
+            //   - School (abbreviated, cut off mid-word, like "Organ Mounta" for "Organ Mountain")
+            //   - Time (MM:SS.SS format with 2 decimal places)
+            //   - Points (optional - some runners don't have points)
+
+            const trimmed = line.trim();
+
+            // Skip headers and non-data lines
+            if (!trimmed ||
+                trimmed.match(/^={5,}$/) ||
+                trimmed.match(/^(Name|Year|School|Finals|Points|Rank|Team|Total|Place|Average|Time)/i) ||
+                trimmed.length < 15) {
+                return null;
+            }
+
+            // Split by whitespace
+            const parts = trimmed.split(/\s+/);
+
+            // Need at least: Place, LastName,FirstName, School, Time (5 fields minimum)
+            if (parts.length < 5) return null;
+
+            // First part should be place number
+            const place = parts[0];
+            if (!place.match(/^\d+$/)) return null;
+
+            // Find the name (contains a comma)
+            let nameEndIndex = -1;
+            let nameParts = [];
+            for (let i = 1; i < parts.length; i++) {
+                if (parts[i].includes(',')) {
+                    // Found the last name with comma
+                    nameParts.push(parts[i]);
+                    // Next part should be first name
+                    if (i + 1 < parts.length) {
+                        nameParts.push(parts[i + 1]);
+                        nameEndIndex = i + 1;
+                    }
+                    break;
+                }
+            }
+
+            if (nameEndIndex === -1 || nameParts.length < 2) return null;
+
+            // Reformat name from "Last, First" to "First Last"
+            const lastName = nameParts[0].replace(',', '');
+            const firstName = nameParts[1];
+            const name = firstName + ' ' + lastName;
+
+            // Find time (MM:SS.SS format)
+            let timeIndex = -1;
+            for (let i = nameEndIndex + 1; i < parts.length; i++) {
+                if (parts[i].match(/^\d{1,2}:\d{2}\.\d{2}$/)) {
+                    timeIndex = i;
+                    break;
+                }
+            }
+
+            if (timeIndex === -1) return null;
+            const time = parts[timeIndex];
+
+            // Team/School is everything between name and time
+            const teamParts = parts.slice(nameEndIndex + 1, timeIndex);
+            if (teamParts.length === 0) return null;
+            const team = teamParts.join(' ');
+
+            // Points are after time (optional)
+            let points = '';
+            if (timeIndex + 1 < parts.length) {
+                const pointsCandidate = parts[timeIndex + 1];
+                if (pointsCandidate.match(/^\d+$/)) {
+                    points = pointsCandidate;
+                }
+            }
+
+            return {
+                place: place,
+                bib: '',
+                name: name,
+                team: team,
+                time: time,
+                grade: '',
+                points: points,
+                pace: ''
             };
         }
 
